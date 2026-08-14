@@ -1,57 +1,31 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
-	"strconv"
+	"order-service/internal/handler"
+	"order-service/internal/repository"
 
 	"github.com/gorilla/mux"
 )
 
-type Order struct {
-	ID        int
-	UserId    int
-	ProductId int
-	Quality   int
-}
-
-var orders []Order
-
 func main() {
+	conn, err := repository.Connect()
+	if err != nil {
+		log.Fatal("Ошибка Бд:", err)
+	}
+	defer conn.Close(nil)
+
+	h := handler.New(conn)
+
 	r := mux.NewRouter()
-	r.HandleFunc("/orders", createOrderHandler).Methods("POST")
-	r.HandleFunc("/orders", getOrdersHandler).Methods("GET")
-	r.HandleFunc("/orders/{id}", getOrderHandler).Methods("GET")
+	r.HandleFunc("/products", h.GerProducts).Methods("GET")
+	r.HandleFunc("/products/{id}", h.GetProductByID).Methods("GET")
+	r.HandleFunc("/orders", h.CreateOrder).Methods("POST")
+	r.HandleFunc("/orders", h.GetOrders).Methods("GET")
+	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
+	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
 
 	log.Println("Order service started on :8083")
 	log.Fatal(http.ListenAndServe(":8083", r))
-}
-
-func getOrdersHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(orders)
-}
-
-func createOrderHandler(w http.ResponseWriter, r *http.Request) {
-	var req Order
-	json.NewDecoder(r.Body).Decode(&req)
-	req.ID = len(orders) + 1
-	orders = append(orders, req)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "added"})
-
-}
-
-func getOrderHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id, _ := strconv.Atoi(vars["id"])
-	for _, p := range orders {
-		if p.ID == id {
-			w.Header().Set("Content-type", "application/json")
-			json.NewEncoder(w).Encode(p)
-			return
-		}
-	}
-	http.Error(w, "Product not found", http.StatusNotFound)
 }

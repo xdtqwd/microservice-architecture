@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: orders_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./order-service/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  order-service:
+    build: ./order-service
+    ports:
+      - "8083:8083"
+    environment:
+      DATABASE_URL: postgres://postgres:password@postgres:5432/orders_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
