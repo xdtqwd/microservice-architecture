@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Product struct {
@@ -13,7 +13,7 @@ type Product struct {
 	Stock int
 }
 
-func GetProducts(conn *pgx.Conn) ([]Product, error) {
+func GetProducts(conn *pgxpool.Pool) ([]Product, error) {
 	rows, err := conn.Query(context.Background(),
 		"SELECT id, name, price, stock FROM products")
 	if err != nil {
@@ -33,7 +33,7 @@ func GetProducts(conn *pgx.Conn) ([]Product, error) {
 	return products, nil
 }
 
-func GetProductByID(conn *pgx.Conn, id int) (*Product, error) {
+func GetProductByID(conn *pgxpool.Pool, id int) (*Product, error) {
 	var p Product
 	err := conn.QueryRow(context.Background(),
 		"SELECT id, name, price, stock FROM products WHERE id = $1", id).Scan(&p.ID, &p.Name, &p.Price, &p.Stock)

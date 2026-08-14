@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Order struct {
@@ -22,7 +22,7 @@ type OrderItem struct {
 	Price     float64
 }
 
-func CreateOrder(conn *pgx.Conn, items []OrderItem) (int, error) {
+func CreateOrder(conn *pgxpool.Pool, items []OrderItem) (int, error) {
 	var orderID int
 	err := conn.QueryRow(context.Background(),
 		"INSERT INTO orders (status) VALUES ('pending') RETURNING id").Scan(&orderID)
@@ -41,7 +41,7 @@ func CreateOrder(conn *pgx.Conn, items []OrderItem) (int, error) {
 	return orderID, nil
 }
 
-func GetOrderByID(conn *pgx.Conn, id int) (*Order, error) {
+func GetOrderByID(conn *pgxpool.Pool, id int) (*Order, error) {
 	var o Order
 	err := conn.QueryRow(context.Background(),
 		"SELECT id, status, created_at FROM orders WHERE id = $1", id).Scan(&o.ID, &o.Status, &o.CreatedAt)
@@ -51,7 +51,7 @@ func GetOrderByID(conn *pgx.Conn, id int) (*Order, error) {
 	return &o, nil
 }
 
-func GetOrders(conn *pgx.Conn) ([]Order, error) {
+func GetOrders(conn *pgxpool.Pool) ([]Order, error) {
 	rows, err := conn.Query(context.Background(),
 		"SELECT id, status, created_at FROM orders")
 	if err != nil {
@@ -72,7 +72,7 @@ func GetOrders(conn *pgx.Conn) ([]Order, error) {
 	return orders, nil
 }
 
-func CancelOrder(conn *pgx.Conn, id int) error {
+func CancelOrder(conn *pgxpool.Pool, id int) error {
 	_, err := conn.Exec(context.Background(),
 		"UPDATE orders SET status = $1 WHERE id = $2",
 		"canceled", id)

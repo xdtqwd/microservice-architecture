@@ -14,7 +14,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Ошибка Бд:", err)
 	}
-	defer conn.Close(nil)
+	defer conn.Close()
 
 	h := handler.New(conn)
 

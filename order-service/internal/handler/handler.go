@@ -7,14 +7,14 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Handler struct {
-	conn *pgx.Conn
+	conn *pgxpool.Pool
 }
 
-func New(conn *pgx.Conn) *Handler {
+func New(conn *pgxpool.Pool) *Handler {
 	return &Handler{conn: conn}
 }
 
