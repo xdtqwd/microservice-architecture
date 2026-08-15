@@ -19,8 +19,3 @@ CREATE TABLE IF NOT EXISTS order_items (
     price       NUMERIC NOT NULL
 );
 
--- тестовые данные
-INSERT INTO products (name, price, stock) VALUES
-    ('MacBook Pro', 150000, 10),
-    ('iPhone 15', 80000, 25),
-    ('AirPods Pro', 20000, 50);

@@ -1,31 +1,17 @@
 package main
 
 import (
+	"context"
 	"log"
-	"net/http"
-	"order-service/internal/handler"
-	"order-service/internal/repository"
-
-	"github.com/gorilla/mux"
+	"order-service/internal/app"
 )
 
 func main() {
-	conn, err := repository.Connect()
+	ctx := context.Background()
+
+	app, err := app.New(ctx)
 	if err != nil {
-		log.Fatal("Ошибка Бд:", err)
+		log.Fatal(err)
 	}
-	defer conn.Close()
-
-	h := handler.New(conn)
-
-	r := mux.NewRouter()
-	r.HandleFunc("/products", h.GerProducts).Methods("GET")
-	r.HandleFunc("/products/{id}", h.GetProductByID).Methods("GET")
-	r.HandleFunc("/orders", h.CreateOrder).Methods("POST")
-	r.HandleFunc("/orders", h.GetOrders).Methods("GET")
-	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
-	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
-
-	log.Println("Order service started on :8083")
-	log.Fatal(http.ListenAndServe(":8083", r))
+	log.Fatal(app.Run())
 }

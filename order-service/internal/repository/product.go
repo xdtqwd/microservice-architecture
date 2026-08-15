@@ -1,10 +1,6 @@
 package repository
 
-import (
-	"context"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-)
+import "context"
 
 type Product struct {
 	ID    int
@@ -13,8 +9,8 @@ type Product struct {
 	Stock int
 }
 
-func GetProducts(conn *pgxpool.Pool) ([]Product, error) {
-	rows, err := conn.Query(context.Background(),
+func (r *Repository) GetProducts(ctx context.Context) ([]Product, error) {
+	rows, err := r.pool.Query(context.Background(),
 		"SELECT id, name, price, stock FROM products")
 	if err != nil {
 		return nil, err
@@ -33,13 +29,13 @@ func GetProducts(conn *pgxpool.Pool) ([]Product, error) {
 	return products, nil
 }
 
-func GetProductByID(conn *pgxpool.Pool, id int) (*Product, error) {
+func (r *Repository) GetProductByID(ctx context.Context, id int) (*Product, error) {
 	var p Product
-	err := conn.QueryRow(context.Background(),
-		"SELECT id, name, price, stock FROM products WHERE id = $1", id).Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
+	err := r.pool.QueryRow(context.Background(),
+		"SELECT id, name, price, stock FROM products WHERE id = $1", id).
+		Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
 	if err != nil {
 		return nil, err
 	}
 	return &p, nil
-
 }

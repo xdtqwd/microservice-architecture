@@ -3,8 +3,6 @@ package repository
 import (
 	"context"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Order struct {
@@ -22,15 +20,16 @@ type OrderItem struct {
 	Price     float64
 }
 
-func CreateOrder(conn *pgxpool.Pool, items []OrderItem) (int, error) {
+func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, error) {
 	var orderID int
-	err := conn.QueryRow(context.Background(),
-		"INSERT INTO orders (status) VALUES ('pending') RETURNING id").Scan(&orderID)
+	err := r.pool.QueryRow(context.Background(),
+		"INSERT INTO orders (status) VALUES ('pending') RETURNING id").
+		Scan(&orderID)
 	if err != nil {
 		return 0, err
 	}
 	for _, item := range items {
-		_, err := conn.Exec(context.Background(),
+		_, err = r.pool.Exec(context.Background(),
 			`INSERT INTO order_items (order_id, product_id, quantity, price)
              VALUES ($1, $2, $3, $4)`,
 			orderID, item.ProductID, item.Quantity, item.Price)
@@ -41,18 +40,19 @@ func CreateOrder(conn *pgxpool.Pool, items []OrderItem) (int, error) {
 	return orderID, nil
 }
 
-func GetOrderByID(conn *pgxpool.Pool, id int) (*Order, error) {
+func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 	var o Order
-	err := conn.QueryRow(context.Background(),
-		"SELECT id, status, created_at FROM orders WHERE id = $1", id).Scan(&o.ID, &o.Status, &o.CreatedAt)
+	err := r.pool.QueryRow(context.Background(),
+		"SELECT id, status, created_at FROM orders WHERE id = $1", id).
+		Scan(&o.ID, &o.Status, &o.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &o, nil
 }
 
-func GetOrders(conn *pgxpool.Pool) ([]Order, error) {
-	rows, err := conn.Query(context.Background(),
+func (r *Repository) GetOrders(ctx context.Context) ([]Order, error) {
+	rows, err := r.pool.Query(context.Background(),
 		"SELECT id, status, created_at FROM orders")
 	if err != nil {
 		return nil, err
@@ -66,15 +66,18 @@ func GetOrders(conn *pgxpool.Pool) ([]Order, error) {
 		if err != nil {
 			return nil, err
 		}
-
 		orders = append(orders, o)
 	}
 	return orders, nil
 }
 
-func CancelOrder(conn *pgxpool.Pool, id int) error {
-	_, err := conn.Exec(context.Background(),
-		"UPDATE orders SET status = $1 WHERE id = $2",
-		"canceled", id)
-	return err
+func (r *Repository) CancelOrder(ctx context.Context, id int) (int, error) {
+	var cancelledID int
+	err := r.pool.QueryRow(ctx,
+		"UPDATE orders SET status = $1 WHERE id = $2 RETURNING id",
+		"cancelled", id).Scan(&cancelledID)
+	if err != nil {
+		return 0, err
+	}
+	return cancelledID, nil
 }
