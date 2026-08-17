@@ -22,14 +22,14 @@ type OrderItem struct {
 
 func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, error) {
 	var orderID int
-	err := r.pool.QueryRow(context.Background(),
+	err := r.pool.QueryRow(ctx,
 		"INSERT INTO orders (status) VALUES ('pending') RETURNING id").
 		Scan(&orderID)
 	if err != nil {
 		return 0, err
 	}
 	for _, item := range items {
-		_, err = r.pool.Exec(context.Background(),
+		_, err = r.pool.Exec(ctx,
 			`INSERT INTO order_items (order_id, product_id, quantity, price)
              VALUES ($1, $2, $3, $4)`,
 			orderID, item.ProductID, item.Quantity, item.Price)
@@ -42,7 +42,7 @@ func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, e
 
 func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 	var o Order
-	err := r.pool.QueryRow(context.Background(),
+	err := r.pool.QueryRow(ctx,
 		"SELECT id, status, created_at FROM orders WHERE id = $1", id).
 		Scan(&o.ID, &o.Status, &o.CreatedAt)
 	if err != nil {
@@ -52,7 +52,7 @@ func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 }
 
 func (r *Repository) GetOrders(ctx context.Context) ([]Order, error) {
-	rows, err := r.pool.Query(context.Background(),
+	rows, err := r.pool.Query(ctx,
 		"SELECT id, status, created_at FROM orders")
 	if err != nil {
 		return nil, err

@@ -4,8 +4,11 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"order-service/internal/cache"
+	"order-service/internal/config"
 	"order-service/internal/handler"
 	"order-service/internal/repository"
+	"order-service/internal/service"
 
 	"github.com/gorilla/mux"
 )
@@ -15,15 +18,20 @@ type App struct {
 }
 
 func New(ctx context.Context) (*App, error) {
-	pool, err := repository.Connect(ctx)
+	cfg := config.Load()
+	pool, err := repository.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
+	redisCache := cache.New(cfg.RedisAddr)
 	repo := repository.New(pool)
-	h := handler.New(repo)
+	orderSvc := service.NewOrderService(repo)
+	productSvc := service.NewProductService(repo, redisCache)
+	h := handler.New(orderSvc, productSvc)
 	r := setupRoutes(h)
-	return &App{server: &http.Server{Addr: ":8083", Handler: r}}, nil
+	return &App{server: &http.Server{Addr: cfg.Port, Handler: r}}, nil
 }
+
 func setupRoutes(h *handler.Handler) http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/products", h.GetProducts).Methods("GET")
@@ -32,6 +40,7 @@ func setupRoutes(h *handler.Handler) http.Handler {
 	r.HandleFunc("/orders", h.GetOrders).Methods("GET")
 	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
+	r.HandleFunc("/products/{id}/cache", h.InvalidateProductCache).Methods("DELETE")
 	return r
 }
 

@@ -1,6 +1,8 @@
 package repository
 
-import "context"
+import (
+	"context"
+)
 
 type Product struct {
 	ID    int
@@ -10,7 +12,7 @@ type Product struct {
 }
 
 func (r *Repository) GetProducts(ctx context.Context) ([]Product, error) {
-	rows, err := r.pool.Query(context.Background(),
+	rows, err := r.pool.Query(ctx,
 		"SELECT id, name, price, stock FROM products")
 	if err != nil {
 		return nil, err
@@ -30,8 +32,9 @@ func (r *Repository) GetProducts(ctx context.Context) ([]Product, error) {
 }
 
 func (r *Repository) GetProductByID(ctx context.Context, id int) (*Product, error) {
+
 	var p Product
-	err := r.pool.QueryRow(context.Background(),
+	err := r.pool.QueryRow(ctx,
 		"SELECT id, name, price, stock FROM products WHERE id = $1", id).
 		Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
 	if err != nil {
