@@ -21,21 +21,33 @@ type OrderItem struct {
 }
 
 func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
 	var orderID int
-	err := r.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		"INSERT INTO orders (status) VALUES ('pending') RETURNING id").
 		Scan(&orderID)
 	if err != nil {
 		return 0, err
 	}
+
 	for _, item := range items {
-		_, err = r.pool.Exec(ctx,
+		_, err = tx.Exec(ctx,
 			`INSERT INTO order_items (order_id, product_id, quantity, price)
              VALUES ($1, $2, $3, $4)`,
 			orderID, item.ProductID, item.Quantity, item.Price)
 		if err != nil {
 			return 0, err
 		}
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return 0, err
 	}
 	return orderID, nil
 }

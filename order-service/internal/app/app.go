@@ -2,34 +2,49 @@ package app
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"net/http"
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
 	"order-service/internal/repository"
 	"order-service/internal/service"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gorilla/mux"
+	"go.uber.org/zap"
 )
 
 type App struct {
 	server *http.Server
+	logger *zap.Logger
+	ctx    context.Context
 }
 
-func New(ctx context.Context) (*App, error) {
+func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	cfg := config.Load()
 	pool, err := repository.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
 	redisCache := cache.New(cfg.RedisAddr)
+	if err := redisCache.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("redis connection failed: %w", err)
+	}
+	logger.Info("Redis connected!")
 	repo := repository.New(pool)
 	orderSvc := service.NewOrderService(repo)
-	productSvc := service.NewProductService(repo, redisCache)
+	productSvc := service.NewProductService(repo, redisCache, logger)
 	h := handler.New(orderSvc, productSvc)
 	r := setupRoutes(h)
-	return &App{server: &http.Server{Addr: cfg.Port, Handler: r}}, nil
+	return &App{
+		server: &http.Server{Addr: cfg.Port, Handler: r},
+		logger: logger,
+		ctx:    ctx,
+	}, nil
 }
 
 func setupRoutes(h *handler.Handler) http.Handler {
@@ -45,6 +60,18 @@ func setupRoutes(h *handler.Handler) http.Handler {
 }
 
 func (a *App) Run() error {
-	log.Println("Order service started on :8083")
-	return a.server.ListenAndServe()
+	a.logger.Info("Order service started", zap.String("port", ":8083"))
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		if err := a.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			a.logger.Fatal("server error", zap.Error(err))
+		}
+	}()
+	<-quit
+	a.logger.Info("Shutting down...")
+	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
+	defer cancel()
+	return a.server.Shutdown(ctx)
 }

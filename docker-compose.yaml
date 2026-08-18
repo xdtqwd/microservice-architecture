@@ -16,15 +16,21 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
   order-service:
     build: ./order-service
     ports:
       - "8083:8083"
     environment:
       DATABASE_URL: postgres://postgres:password@postgres:5432/orders_db
+      REDIS_ADDR: redis:6379
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
+      - redis
 
 volumes:
   pgdata:
