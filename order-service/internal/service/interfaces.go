@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"order-service/internal/repository"
+	"time"
 )
 
 type OrderRepository interface {
@@ -10,4 +11,14 @@ type OrderRepository interface {
 	GetOrderByID(ctx context.Context, id int) (*repository.Order, error)
 	GetOrders(ctx context.Context) ([]repository.Order, error)
 	CancelOrder(ctx context.Context, id int) (int, error)
+}
+type Cache interface {
+	Get(ctx context.Context, key string, dest interface{}) error
+	Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error
+	Delete(ctx context.Context, key string) error
+}
+
+type ProductRepository interface {
+	GetProducts(ctx context.Context) ([]repository.Product, error)
+	GetProductByID(ctx context.Context, id int) (*repository.Product, error)
 }
