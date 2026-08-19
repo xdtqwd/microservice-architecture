@@ -1,0 +1,19 @@
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+
+linters-settings:
+  goimports:
+    local-prefixes: order-service
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  
