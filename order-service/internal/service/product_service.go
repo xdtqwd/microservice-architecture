@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"order-service/internal/cache"
 	"order-service/internal/repository"
 	"time"
 
@@ -12,12 +11,12 @@ import (
 )
 
 type ProductService struct {
-	repo   *repository.Repository
-	cache  *cache.RedisCache
+	repo   ProductRepository
+	cache  Cache
 	logger *zap.Logger
 }
 
-func NewProductService(repo *repository.Repository, cache *cache.RedisCache, logger *zap.Logger) *ProductService {
+func NewProductService(repo ProductRepository, cache Cache, logger *zap.Logger) *ProductService {
 	return &ProductService{repo: repo, cache: cache, logger: logger}
 }
 
