@@ -42,7 +42,9 @@ func (s *ProductService) GetProductByID(ctx context.Context, id int) (*repositor
 	if err != nil {
 		return nil, err
 	}
-	s.cache.Set(ctx, key, p, 5*time.Minute)
+	if err := s.cache.Set(ctx, key, p, 5*time.Minute); err != nil {
+		s.logger.Error("cache set error", zap.Error(err))
+	}
 	return p, nil
 }
 
