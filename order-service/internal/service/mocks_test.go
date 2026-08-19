@@ -2,13 +2,45 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"order-service/internal/repository"
+	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type mockRepo struct {
 	orders   []repository.Order
 	products []repository.Product
 	nextID   int
+}
+type mockCache struct {
+	data map[string][]byte
+}
+
+func newMockCache() *mockCache {
+	return &mockCache{data: make(map[string][]byte)}
+}
+
+func (c *mockCache) Get(ctx context.Context, key string, dest interface{}) error {
+	val, ok := c.data[key]
+	if !ok {
+		return redis.Nil
+	}
+	return json.Unmarshal(val, dest)
+}
+func (c *mockCache) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	c.data[key] = data
+	return nil
+}
+
+func (c *mockCache) Delete(ctx context.Context, key string) error {
+	delete(c.data, key)
+	return nil
 }
 
 func newMockRepo() *mockRepo {
@@ -48,4 +80,17 @@ func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 		}
 	}
 	return 0, nil
+}
+
+func (m *mockRepo) GetProducts(ctx context.Context) ([]repository.Product, error) {
+	return m.products, nil
+}
+
+func (m *mockRepo) GetProductByID(ctx context.Context, id int) (*repository.Product, error) {
+	for _, p := range m.products {
+		if p.ID == id {
+			return &p, nil
+		}
+	}
+	return nil, nil
 }
