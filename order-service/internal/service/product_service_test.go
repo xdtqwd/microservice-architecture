@@ -25,7 +25,8 @@ func TestGetProductByID_CacheHit(t *testing.T) {
 	cache := newMockCache()
 	svc := NewProductService(repo, cache, zap.NewNop())
 
-	svc.GetProductByID(ctx, 1)
+	_, err := svc.GetProductByID(ctx, 1)
+	assert.NoError(t, err)
 
 	product, err := svc.GetProductByID(ctx, 1)
 	assert.NoError(t, err)
@@ -38,8 +39,9 @@ func TestInvalidateCache(t *testing.T) {
 	cache := newMockCache()
 	svc := NewProductService(repo, cache, zap.NewNop())
 
-	svc.GetProductByID(ctx, 1)
-	err := svc.InvalidateCache(ctx, 1)
+	_, err := svc.GetProductByID(ctx, 1)
+	assert.NoError(t, err)
+	err = svc.InvalidateCache(ctx, 1)
 	assert.NoError(t, err)
 }
 func TestGetProducts(t *testing.T) {
