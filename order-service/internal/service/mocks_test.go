@@ -81,7 +81,6 @@ func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	}
 	return 0, nil
 }
-
 func (m *mockRepo) GetProducts(ctx context.Context) ([]repository.Product, error) {
 	return m.products, nil
 }
