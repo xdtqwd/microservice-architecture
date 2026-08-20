@@ -11,16 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
-          cache-dependency-path: order-service/go.sum
-
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.0
+        go-version: '1.25.13'
+        cache-dependency-path: order-service/go.sum
 
       - name: golangci-lint
         working-directory: order-service
@@ -46,7 +41,7 @@ jobs:
 
       - name: Build
         working-directory: order-service
-        run: go build ./cmd
+        run: go build -o server ./cmd
 
       - name: Docker build
         uses: docker/build-push-action@v5
