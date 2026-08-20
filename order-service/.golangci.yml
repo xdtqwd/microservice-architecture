@@ -1,29 +1,53 @@
-version: "2"
-run:
-  modules-download-mode: readonly
-linters:
-  exclusions:
-    generated: lax
-    presets:
-      - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
-formatters:
-  enable:
-    - gofmt
-   
-  settings:
-    goimports:
-      local-prefixes:
-        - order-service
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: order-service/go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: order-service
+
+      - name: Unit tests
+        working-directory: order-service
+        run: go test ./...
+
+      - name: Race detector
+        working-directory: order-service
+        run: go test -race ./...
+
+      - name: Coverage
+        working-directory: order-service
+        run: go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
+
+      - name: govulncheck
+        working-directory: order-service
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Build
+        working-directory: order-service
+        run: go build ./cmd
+
+      - name: Docker build
+        uses: docker/build-push-action@v5
+        with:
+          context: order-service
+          push: false
