@@ -8,7 +8,6 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
 
 run:
   timeout: 5m
