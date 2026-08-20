@@ -16,7 +16,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer logger.Sync()
+	defer func() {
+		_ = logger.Sync()
+	}()
 
 	app, err := app.New(ctx, logger)
 	if err != nil {
