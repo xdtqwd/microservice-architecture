@@ -22,6 +22,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
+          version: latest
           working-directory: order-service
 
       - name: Unit tests
