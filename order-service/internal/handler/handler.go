@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"order-service/internal/repository"
 	"order-service/internal/service"
 	"strconv"
 	"time"
@@ -15,6 +14,10 @@ import (
 type Handler struct {
 	orderSvc   *service.OrderService
 	productSvc *service.ProductService
+}
+type CreateOrderRequest struct {
+	ProductID int `json:"product_id"`
+	Quantity  int `json:"quantity"`
 }
 
 func New(orderSvc *service.OrderService, productSvc *service.ProductService) *Handler {
@@ -48,15 +51,23 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
-	var items []repository.OrderItem
-	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+	var reqs []CreateOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	items := make([]service.CreateOrderItem, len(reqs))
+	for i, req := range reqs {
+		items[i] = service.CreateOrderItem{
+			ProductID: req.ProductID,
+			Quantity:  req.Quantity,
+		}
+	}
+
 	orderID, err := h.orderSvc.CreateOrder(r.Context(), items)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

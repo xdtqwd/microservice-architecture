@@ -2,19 +2,19 @@ package service
 
 import (
 	"context"
-	"order-service/internal/repository"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestCreateOrder_Success(t *testing.T) {
+
 	ctx := context.Background()
 	repo := newMockRepo()
 	svc := NewOrderService(repo)
 
-	items := []repository.OrderItem{
-		{ProductID: 1, Quantity: 2, Price: 150000},
+	items := []CreateOrderItem{
+		{ProductID: 1, Quantity: 2},
 	}
 
 	id, err := svc.CreateOrder(ctx, items)
@@ -27,7 +27,9 @@ func TestCancelOrder_Success(t *testing.T) {
 	repo := newMockRepo()
 	svc := NewOrderService(repo)
 
-	items := []repository.OrderItem{{ProductID: 1, Quantity: 1, Price: 150000}}
+	items := []CreateOrderItem{
+		{ProductID: 1, Quantity: 2},
+	}
 	id, _ := svc.CreateOrder(ctx, items)
 
 	cancelledID, err := svc.CancelOrder(ctx, id)
@@ -44,7 +46,9 @@ func TestGetOrders_ReturnsAll(t *testing.T) {
 	repo := newMockRepo()
 	svc := NewOrderService(repo)
 
-	items := []repository.OrderItem{{ProductID: 1, Quantity: 1, Price: 150000}}
+	items := []CreateOrderItem{
+		{ProductID: 1, Quantity: 2},
+	}
 
 	_, err := svc.CreateOrder(ctx, items)
 	assert.NoError(t, err)
@@ -61,8 +65,8 @@ func TestCreateOrder_InvalidQuantity(t *testing.T) {
 	repo := newMockRepo()
 	svc := NewOrderService(repo)
 
-	items := []repository.OrderItem{
-		{ProductID: 1, Quantity: -1, Price: 150000},
+	items := []CreateOrderItem{
+		{ProductID: 1, Quantity: 2},
 	}
 
 	_, err := svc.CreateOrder(ctx, items)
@@ -73,7 +77,7 @@ func TestCreateOrder_EmptyItems(t *testing.T) {
 	repo := newMockRepo()
 	svc := NewOrderService(repo)
 
-	_, err := svc.CreateOrder(ctx, []repository.OrderItem{})
+	_, err := svc.CreateOrder(ctx, []CreateOrderItem{})
 	assert.Error(t, err)
 }
 
@@ -92,7 +96,9 @@ func TestCancelOrder_AlreadyCancelled(t *testing.T) {
 	repo := newMockRepo()
 	svc := NewOrderService(repo)
 
-	items := []repository.OrderItem{{ProductID: 1, Quantity: 1, Price: 150000}}
+	items := []CreateOrderItem{
+		{ProductID: 1, Quantity: 2},
+	}
 	id, _ := svc.CreateOrder(ctx, items)
 
 	_, err := svc.CancelOrder(ctx, id)
