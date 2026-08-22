@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"order-service/internal/apperrors"
+
 	"time"
 )
 
@@ -25,7 +27,7 @@ func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, e
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var orderID int
 	err = tx.QueryRow(ctx,
@@ -36,6 +38,16 @@ func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, e
 	}
 
 	for _, item := range items {
+		tag, err := tx.Exec(ctx,
+			"UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1",
+			item.Quantity, item.ProductID)
+		if err != nil {
+			return 0, err
+		}
+		if tag.RowsAffected() == 0 {
+			return 0, apperrors.ErrInsufficientStock
+		}
+
 		_, err = tx.Exec(ctx,
 			`INSERT INTO order_items (order_id, product_id, quantity, price)
              VALUES ($1, $2, $3, $4)`,
@@ -59,6 +71,22 @@ func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 		Scan(&o.ID, &o.Status, &o.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+
+	rows, err := r.pool.Query(ctx,
+		"SELECT id, order_id, product_id, quantity, price FROM order_items WHERE order_id = $1", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item OrderItem
+		err = rows.Scan(&item.ID, &item.OrderID, &item.ProductID, &item.Quantity, &item.Price)
+		if err != nil {
+			return nil, err
+		}
+		o.Items = append(o.Items, item)
 	}
 	return &o, nil
 }
