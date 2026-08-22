@@ -66,7 +66,7 @@ func TestCreateOrder_InvalidQuantity(t *testing.T) {
 	svc := NewOrderService(repo)
 
 	items := []CreateOrderItem{
-		{ProductID: 1, Quantity: 2},
+		{ProductID: 1, Quantity: -1},
 	}
 
 	_, err := svc.CreateOrder(ctx, items)
