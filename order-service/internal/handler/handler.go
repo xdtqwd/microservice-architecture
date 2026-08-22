@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/jackc/pgx/v5"
 )
 
 type Handler struct {
@@ -47,7 +48,11 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 	}
 	product, err := h.productSvc.GetProductByID(ctx, id)
 	if err != nil {
-		http.Error(w, "Product not found", http.StatusNotFound)
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "product not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -110,7 +115,11 @@ func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 	}
 	order, err := h.orderSvc.GetOrderByID(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Order not found", http.StatusNotFound)
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "order not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -118,7 +127,6 @@ func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
-
 func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
@@ -127,6 +135,10 @@ func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	cancelledID, err := h.orderSvc.CancelOrder(r.Context(), id)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "order not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
