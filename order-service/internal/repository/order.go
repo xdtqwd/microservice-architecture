@@ -72,6 +72,23 @@ func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	rows, err := r.pool.Query(ctx,
+		"SELECT id, order_id, product_id, quantity, price FROM order_items WHERE order_id = $1", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item OrderItem
+		err = rows.Scan(&item.ID, &item.OrderID, &item.ProductID, &item.Quantity, &item.Price)
+		if err != nil {
+			return nil, err
+		}
+		o.Items = append(o.Items, item)
+	}
+
 	return &o, nil
 }
 
