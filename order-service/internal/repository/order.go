@@ -88,7 +88,6 @@ func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 		}
 		o.Items = append(o.Items, item)
 	}
-
 	return &o, nil
 }
 

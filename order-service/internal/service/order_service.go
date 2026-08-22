@@ -62,9 +62,6 @@ func (s *OrderService) CancelOrder(ctx context.Context, id int) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if order == nil {
-		return 0, errors.New("order not found")
-	}
 	if order.Status == "cancelled" {
 		return 0, errors.New("order already cancelled")
 	}
