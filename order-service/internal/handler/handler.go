@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"order-service/internal/apperrors"
 	"order-service/internal/service"
 	"strconv"
 	"time"
@@ -67,9 +69,14 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	orderID, err := h.orderSvc.CreateOrder(r.Context(), items)
 	if err != nil {
+		if errors.Is(err, apperrors.ErrInsufficientStock) {
+			http.Error(w, "insufficient stock", http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(map[string]int{"id": orderID}); err != nil {
