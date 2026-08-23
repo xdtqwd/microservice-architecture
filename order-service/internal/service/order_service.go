@@ -9,6 +9,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const (
+	defaultLimit = 50
+	maxLimit     = 100
+)
+
 type OrderService struct {
 	repo OrderRepository
 }

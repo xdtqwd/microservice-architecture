@@ -13,7 +13,6 @@ type OrderRepository interface {
 	CancelOrder(ctx context.Context, id int) (int, error)
 	GetProductByID(ctx context.Context, id int) (*repository.Product, error)
 }
-
 type ProductRepository interface {
 	GetProducts(ctx context.Context) ([]repository.Product, error)
 	GetProductByID(ctx context.Context, id int) (*repository.Product, error)
