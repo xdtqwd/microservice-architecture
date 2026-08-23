@@ -36,7 +36,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []CreateOrderItem)
 	}
 
 	seen := make(map[int]bool)
-	var orderItems []repository.OrderItem
+	var orderItems []domain.OrderItem
 
 	for _, item := range items {
 		if item.Quantity <= 0 {
@@ -52,7 +52,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []CreateOrderItem)
 			return 0, errors.New("product not found")
 		}
 
-		orderItems = append(orderItems, repository.OrderItem{
+		orderItems = append(orderItems, domain.OrderItem{
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
 			Price:     product.Price,
@@ -71,7 +71,7 @@ func (s *OrderService) GetOrders(ctx context.Context, limit, offset int) ([]repo
 	return s.repo.GetOrders(ctx, limit, offset)
 }
 
-func (s *OrderService) GetOrderByID(ctx context.Context, id int) (*repository.Order, error) {
+func (s *OrderService) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
 	return s.repo.GetOrderByID(ctx, id)
 }
 
