@@ -44,7 +44,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 			return 0, err
 		}
 		if tag.RowsAffected() == 0 {
-			return 0, apperrors.ErrInsufficientStock
+			return 0, fmt.Errorf("CreateOrder: %w", domain.ErrInsufficientStock)
 		}
 
 		_, err = tx.Exec(ctx,

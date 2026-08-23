@@ -1,6 +1,9 @@
 package handler
 
-import "time"
+import (
+	"order-service/internal/domain"
+	"time"
+)
 
 type OrderResponse struct {
 	ID        int                 `json:"id"`
@@ -20,4 +23,30 @@ type ProductResponse struct {
 	Name  string  `json:"name"`
 	Price float64 `json:"price"`
 	Stock int     `json:"stock"`
+}
+
+func orderToResponse(o *domain.Order) OrderResponse {
+	items := make([]OrderItemResponse, len(o.Items))
+	for i, item := range o.Items {
+		items[i] = OrderItemResponse{
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+			Price:     item.Price,
+		}
+	}
+	return OrderResponse{
+		ID:        o.ID,
+		Status:    o.Status,
+		CreatedAt: o.CreatedAt,
+		Items:     items,
+	}
+}
+
+func productToResponse(p *domain.Product) ProductResponse {
+	return ProductResponse{
+		ID:    p.ID,
+		Name:  p.Name,
+		Price: p.Price,
+		Stock: p.Stock,
+	}
 }
