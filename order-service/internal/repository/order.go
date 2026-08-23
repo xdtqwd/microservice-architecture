@@ -21,7 +21,7 @@ type OrderItem struct {
 	Price     float64
 }
 
-func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, error) {
+func (r *OrderRepo) CreateOrder(ctx context.Context, items []OrderItem) (int, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return 0, err
@@ -63,7 +63,7 @@ func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, e
 	return orderID, nil
 }
 
-func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
+func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 	var o Order
 	err := r.pool.QueryRow(ctx,
 		"SELECT id, status, created_at FROM orders WHERE id = $1", id).
@@ -93,7 +93,7 @@ func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 	return &o, nil
 }
 
-func (r *Repository) GetOrders(ctx context.Context, limit, offset int) ([]Order, error) {
+func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]Order, error) {
 	rows, err := r.pool.Query(ctx,
 		"SELECT id, status, created_at FROM orders ORDER BY id LIMIT $1 OFFSET $2",
 		limit, offset)
@@ -117,7 +117,7 @@ func (r *Repository) GetOrders(ctx context.Context, limit, offset int) ([]Order,
 	return orders, nil
 }
 
-func (r *Repository) CancelOrder(ctx context.Context, id int) (int, error) {
+func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	var cancelledID int
 	err := r.pool.QueryRow(ctx,
 		"UPDATE orders SET status = $1 WHERE id = $2 RETURNING id",
@@ -126,4 +126,15 @@ func (r *Repository) CancelOrder(ctx context.Context, id int) (int, error) {
 		return 0, err
 	}
 	return cancelledID, nil
+}
+
+func (r *OrderRepo) GetProductByID(ctx context.Context, id int) (*Product, error) {
+	var p Product
+	err := r.pool.QueryRow(ctx,
+		"SELECT id, name, price, stock FROM products WHERE id = $1", id).
+		Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
