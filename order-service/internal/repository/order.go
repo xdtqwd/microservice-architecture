@@ -37,6 +37,13 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 	}
 
 	for _, item := range items {
+		var price float64
+		err = tx.QueryRow(ctx,
+			"SELECT price FROM products WHERE id = $1", item.ProductID).Scan(&price)
+		if err != nil {
+			return 0, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
+		}
+
 		tag, err := tx.Exec(ctx,
 			"UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1",
 			item.Quantity, item.ProductID)
@@ -50,7 +57,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 		_, err = tx.Exec(ctx,
 			`INSERT INTO order_items (order_id, product_id, quantity, price)
              VALUES ($1, $2, $3, $4)`,
-			orderID, item.ProductID, item.Quantity, item.Price)
+			orderID, item.ProductID, item.Quantity, price)
 		if err != nil {
 			return 0, err
 		}
@@ -126,15 +133,4 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 		return 0, err
 	}
 	return cancelledID, nil
-}
-
-func (r *OrderRepo) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
-	var p domain.Product
-	err := r.pool.QueryRow(ctx,
-		"SELECT id, name, price, stock FROM products WHERE id = $1", id).
-		Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
-	if err != nil {
-		return nil, err
-	}
-	return &p, nil
 }
