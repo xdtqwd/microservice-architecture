@@ -26,6 +26,10 @@ type CreateOrderItem struct {
 	Quantity  int
 }
 
+type OrderService struct {
+	repo OrderRepository
+}
+
 func NewOrderService(repo OrderRepository) *OrderService {
 	return &OrderService{repo: repo}
 }
@@ -47,15 +51,9 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []CreateOrderItem)
 		}
 		seen[item.ProductID] = true
 
-		product, err := s.repo.GetProductByID(ctx, item.ProductID)
-		if err != nil || product == nil {
-			return 0, errors.New("product not found")
-		}
-
 		orderItems = append(orderItems, domain.OrderItem{
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
-			Price:     product.Price,
 		})
 	}
 
