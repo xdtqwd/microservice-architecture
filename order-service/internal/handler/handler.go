@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"order-service/internal/apperrors"
 	"order-service/internal/domain"
 	"order-service/internal/service"
 	"strconv"
@@ -15,17 +14,31 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+type OrderService interface {
+	CreateOrder(ctx context.Context, items []service.CreateOrderItem) (int, error)
+	GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error)
+	GetOrderByID(ctx context.Context, id int) (*domain.Order, error)
+	CancelOrder(ctx context.Context, id int) (int, error)
+}
+
+type ProductService interface {
+	GetProducts(ctx context.Context) ([]domain.Product, error)
+	GetProductByID(ctx context.Context, id int) (*domain.Product, error)
+	InvalidateCache(ctx context.Context, id int) error
+}
+
 type Handler struct {
 	orderSvc   OrderService
 	productSvc ProductService
 }
-type CreateOrderRequest struct {
-	ProductID int `json:"product_id"`
-	Quantity  int `json:"quantity"`
-}
 
 func New(orderSvc OrderService, productSvc ProductService) *Handler {
 	return &Handler{orderSvc: orderSvc, productSvc: productSvc}
+}
+
+type CreateOrderRequest struct {
+	ProductID int `json:"product_id"`
+	Quantity  int `json:"quantity"`
 }
 
 func (h *Handler) GetProducts(w http.ResponseWriter, r *http.Request) {
@@ -95,14 +108,13 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	orderID, err := h.orderSvc.CreateOrder(r.Context(), items)
 	if err != nil {
-		if errors.Is(err, apperrors.ErrInsufficientStock) {
+		if errors.Is(err, domain.ErrInsufficientStock) {
 			http.Error(w, "insufficient stock", http.StatusConflict)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(map[string]int{"id": orderID}); err != nil {
@@ -125,6 +137,10 @@ func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	responses := make([]OrderResponse, len(orders))
+	for i, o := range orders {
+		responses[i] = orderToResponse(&o)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(orders); err != nil {
@@ -164,6 +180,7 @@ func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
+
 func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
@@ -210,32 +227,5 @@ func (h *Handler) InvalidateProductCache(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-
-}
-
-func orderToResponse(o *domain.Order) OrderResponse {
-	items := make([]OrderItemResponse, len(o.Items))
-	for i, item := range o.Items {
-		items[i] = OrderItemResponse{
-			ProductID: item.ProductID,
-			Quantity:  item.Quantity,
-			Price:     item.Price,
-		}
-	}
-	return OrderResponse{
-		ID:        o.ID,
-		Status:    o.Status,
-		CreatedAt: o.CreatedAt,
-		Items:     items,
-	}
-}
-
-func productToResponse(p *domain.Product) ProductResponse {
-	return ProductResponse{
-		ID:    p.ID,
-		Name:  p.Name,
-		Price: p.Price,
-		Stock: p.Stock,
 	}
 }
