@@ -38,9 +38,10 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 		return nil, fmt.Errorf("redis connection failed: %w", err)
 	}
 	logger.Info("Redis connected!")
-	repo := repository.New(pool)
-	orderSvc := service.NewOrderService(repo)
-	productSvc := service.NewProductService(repo, redisCache, logger)
+	orderRepo := repository.NewOrderRepo(pool)
+	productRepo := repository.NewProductRepo(pool)
+	orderSvc := service.NewOrderService(orderRepo)
+	productSvc := service.NewProductService(productRepo, redisCache, logger)
 	h := handler.New(orderSvc, productSvc)
 	r := setupRoutes(h)
 	return &App{

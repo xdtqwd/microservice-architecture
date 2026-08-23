@@ -9,7 +9,7 @@ type Product struct {
 	Stock int
 }
 
-func (r *Repository) GetProducts(ctx context.Context) ([]Product, error) {
+func (r *ProductRepo) GetProducts(ctx context.Context) ([]Product, error) {
 	rows, err := r.pool.Query(ctx,
 		"SELECT id, name, price, stock FROM products")
 	if err != nil {
