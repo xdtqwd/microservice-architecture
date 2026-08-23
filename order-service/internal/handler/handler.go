@@ -15,15 +15,15 @@ import (
 )
 
 type Handler struct {
-	orderSvc   *service.OrderService
-	productSvc *service.ProductService
+	orderSvc   OrderService
+	productSvc ProductService
 }
 type CreateOrderRequest struct {
 	ProductID int `json:"product_id"`
 	Quantity  int `json:"quantity"`
 }
 
-func New(orderSvc *service.OrderService, productSvc *service.ProductService) *Handler {
+func New(orderSvc OrderService, productSvc ProductService) *Handler {
 	return &Handler{orderSvc: orderSvc, productSvc: productSvc}
 }
 
