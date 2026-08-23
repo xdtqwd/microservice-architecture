@@ -8,6 +8,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+func (c *RedisCache) Close() error {
+	return c.client.Close()
+}
+
 type RedisCache struct {
 	client *redis.Client
 }

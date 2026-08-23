@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
 
@@ -22,6 +23,8 @@ type App struct {
 	server *http.Server
 	logger *zap.Logger
 	ctx    context.Context
+	pool   *pgxpool.Pool
+	cache  *cache.RedisCache
 }
 
 func New(ctx context.Context, logger *zap.Logger) (*App, error) {
@@ -44,6 +47,8 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 		server: &http.Server{Addr: cfg.Port, Handler: r},
 		logger: logger,
 		ctx:    ctx,
+		pool:   pool,
+		cache:  redisCache,
 	}, nil
 }
 
@@ -60,7 +65,8 @@ func setupRoutes(h *handler.Handler) http.Handler {
 }
 
 func (a *App) Run() error {
-	a.logger.Info("Order service started", zap.String("port", ":8083"))
+	a.logger.Info("Order service started", zap.String("port", a.server.Addr))
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -69,9 +75,25 @@ func (a *App) Run() error {
 			a.logger.Fatal("server error", zap.Error(err))
 		}
 	}()
+
 	<-quit
 	a.logger.Info("Shutting down...")
+
 	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
 	defer cancel()
-	return a.server.Shutdown(ctx)
+
+	if err := a.server.Shutdown(ctx); err != nil {
+		a.logger.Error("server shutdown error", zap.Error(err))
+	}
+	a.logger.Info("HTTP server stopped")
+
+	if err := a.cache.Close(); err != nil {
+		a.logger.Error("redis close error", zap.Error(err))
+	}
+	a.logger.Info("Redis closed")
+
+	a.pool.Close()
+	a.logger.Info("DB pool closed")
+
+	return nil
 }
