@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"order-service/internal/repository"
+	"order-service/internal/domain"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -20,13 +20,13 @@ func NewProductService(repo ProductRepository, cache Cache, logger *zap.Logger) 
 	return &ProductService{repo: repo, cache: cache, logger: logger}
 }
 
-func (s *ProductService) GetProducts(ctx context.Context) ([]repository.Product, error) {
+func (s *ProductService) GetProducts(ctx context.Context) ([]domain.Product, error) {
 	return s.repo.GetProducts(ctx)
 }
 
-func (s *ProductService) GetProductByID(ctx context.Context, id int) (*repository.Product, error) {
+func (s *ProductService) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
 	key := fmt.Sprintf("product:%d", id)
-	var product repository.Product
+	var product domain.Product
 
 	err := s.cache.Get(ctx, key, &product)
 	if err == nil {

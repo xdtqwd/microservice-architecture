@@ -9,7 +9,7 @@ type Product struct {
 	Stock int
 }
 
-func (r *ProductRepo) GetProducts(ctx context.Context) ([]Product, error) {
+func (r *ProductRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
 	rows, err := r.pool.Query(ctx,
 		"SELECT id, name, price, stock FROM products")
 	if err != nil {
@@ -17,9 +17,9 @@ func (r *ProductRepo) GetProducts(ctx context.Context) ([]Product, error) {
 	}
 	defer rows.Close()
 
-	var products []Product
+	var products []domain.Product
 	for rows.Next() {
-		var p Product
+		var p domain.Product
 		err = rows.Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
 		if err != nil {
 			return nil, err

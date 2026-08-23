@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"order-service/internal/apperrors"
+	"order-service/internal/domain"
 	"order-service/internal/service"
 	"strconv"
 	"time"
@@ -211,4 +212,30 @@ func (h *Handler) InvalidateProductCache(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
+}
+
+func orderToResponse(o *domain.Order) OrderResponse {
+	items := make([]OrderItemResponse, len(o.Items))
+	for i, item := range o.Items {
+		items[i] = OrderItemResponse{
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+			Price:     item.Price,
+		}
+	}
+	return OrderResponse{
+		ID:        o.ID,
+		Status:    o.Status,
+		CreatedAt: o.CreatedAt,
+		Items:     items,
+	}
+}
+
+func productToResponse(p *domain.Product) ProductResponse {
+	return ProductResponse{
+		ID:    p.ID,
+		Name:  p.Name,
+		Price: p.Price,
+		Stock: p.Stock,
+	}
 }

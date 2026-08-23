@@ -21,7 +21,7 @@ type OrderItem struct {
 	Price     float64
 }
 
-func (r *OrderRepo) CreateOrder(ctx context.Context, items []OrderItem) (int, error) {
+func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return 0, err
@@ -63,8 +63,8 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []OrderItem) (int, er
 	return orderID, nil
 }
 
-func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*Order, error) {
-	var o Order
+func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
+	var o domain.Order
 	err := r.pool.QueryRow(ctx,
 		"SELECT id, status, created_at FROM orders WHERE id = $1", id).
 		Scan(&o.ID, &o.Status, &o.CreatedAt)
@@ -80,7 +80,7 @@ func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var item OrderItem
+		var item domain.OrderItem
 		err = rows.Scan(&item.ID, &item.OrderID, &item.ProductID, &item.Quantity, &item.Price)
 		if err != nil {
 			return nil, err
@@ -93,7 +93,7 @@ func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 	return &o, nil
 }
 
-func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]Order, error) {
+func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
 	rows, err := r.pool.Query(ctx,
 		"SELECT id, status, created_at FROM orders ORDER BY id LIMIT $1 OFFSET $2",
 		limit, offset)
@@ -102,9 +102,9 @@ func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]Order, 
 	}
 	defer rows.Close()
 
-	var orders []Order
+	var orders []domain.Order
 	for rows.Next() {
-		var o Order
+		var o domain.Order
 		err = rows.Scan(&o.ID, &o.Status, &o.CreatedAt)
 		if err != nil {
 			return nil, err
@@ -128,8 +128,8 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	return cancelledID, nil
 }
 
-func (r *OrderRepo) GetProductByID(ctx context.Context, id int) (*Product, error) {
-	var p Product
+func (r *OrderRepo) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
+	var p domain.Product
 	err := r.pool.QueryRow(ctx,
 		"SELECT id, name, price, stock FROM products WHERE id = $1", id).
 		Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
