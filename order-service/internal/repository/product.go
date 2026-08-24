@@ -32,7 +32,7 @@ func (r *ProductRepo) GetProducts(ctx context.Context) ([]Product, error) {
 	return products, nil
 }
 
-func (r *Repository) GetProductByID(ctx context.Context, id int) (*Product, error) {
+func (r *ProductRepo) GetProductByID(ctx context.Context, id int) (*Product, error) {
 	var p Product
 	err := r.pool.QueryRow(ctx,
 		"SELECT id, name, price, stock FROM products WHERE id = $1", id).
