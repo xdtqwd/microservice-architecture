@@ -49,15 +49,9 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []CreateOrderItem)
 		}
 		seen[item.ProductID] = true
 
-		product, err := s.repo.GetProductByID(ctx, item.ProductID)
-		if err != nil || product == nil {
-			return 0, errors.New("product not found")
-		}
-
 		orderItems = append(orderItems, repository.OrderItem{
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
-			Price:     product.Price,
 		})
 	}
 

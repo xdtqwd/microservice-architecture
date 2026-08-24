@@ -127,14 +127,3 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	}
 	return cancelledID, nil
 }
-
-func (r *OrderRepo) GetProductByID(ctx context.Context, id int) (*Product, error) {
-	var p Product
-	err := r.pool.QueryRow(ctx,
-		"SELECT id, name, price, stock FROM products WHERE id = $1", id).
-		Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
-	if err != nil {
-		return nil, err
-	}
-	return &p, nil
-}

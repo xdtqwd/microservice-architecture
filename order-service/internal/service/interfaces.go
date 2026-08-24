@@ -11,7 +11,6 @@ type OrderRepository interface {
 	GetOrderByID(ctx context.Context, id int) (*repository.Order, error)
 	GetOrders(ctx context.Context, limit, offset int) ([]repository.Order, error)
 	CancelOrder(ctx context.Context, id int) (int, error)
-	GetProductByID(ctx context.Context, id int) (*repository.Product, error)
 }
 type ProductRepository interface {
 	GetProducts(ctx context.Context) ([]repository.Product, error)
