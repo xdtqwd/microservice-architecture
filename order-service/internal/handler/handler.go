@@ -40,7 +40,11 @@ func (h *Handler) GetProducts(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	id, _ := strconv.Atoi(mux.Vars(r)["id"])
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
 	product, err := h.productSvc.GetProductByID(ctx, id)
 	if err != nil {
 		http.Error(w, "Product not found", http.StatusNotFound)
@@ -97,7 +101,11 @@ func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(mux.Vars(r)["id"])
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
 	order, err := h.orderSvc.GetOrderByID(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Order not found", http.StatusNotFound)
@@ -110,7 +118,11 @@ func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(mux.Vars(r)["id"])
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
 	cancelledID, err := h.orderSvc.CancelOrder(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -123,8 +135,12 @@ func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) InvalidateProductCache(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(mux.Vars(r)["id"])
-	err := h.productSvc.InvalidateCache(r.Context(), id)
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	err = h.productSvc.InvalidateCache(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

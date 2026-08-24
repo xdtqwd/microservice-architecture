@@ -4,6 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
+    branches: [ main ]
 
 jobs:
   ci:
@@ -15,8 +16,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.1'
-          cache-dependency-path: order-service/go.sum
+    go-version: '1.26.0'
+    cache-dependency-path: order-service/go.sum
 
       - name: Install golangci-lint
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.0
@@ -41,8 +42,7 @@ jobs:
         working-directory: order-service
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./... || echo "vulnerabilities found, see above"
-        continue-on-error: true
+          govulncheck ./...
 
       - name: Build
         working-directory: order-service
