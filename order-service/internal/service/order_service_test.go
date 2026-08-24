@@ -107,3 +107,22 @@ func TestCancelOrder_AlreadyCancelled(t *testing.T) {
 	_, err = svc.CancelOrder(ctx, id)
 	assert.Error(t, err)
 }
+
+func TestGetOrders_Pagination(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRepo()
+	svc := NewOrderService(repo)
+
+	items := []CreateOrderItem{{ProductID: 1, Quantity: 1}}
+	svc.CreateOrder(ctx, items)
+	svc.CreateOrder(ctx, items)
+	svc.CreateOrder(ctx, items)
+
+	orders, err := svc.GetOrders(ctx, 10000, 0)
+	assert.NoError(t, err)
+	assert.LessOrEqual(t, len(orders), 100)
+
+	orders, err = svc.GetOrders(ctx, -1, 0)
+	assert.NoError(t, err)
+	assert.NotNil(t, orders)
+}

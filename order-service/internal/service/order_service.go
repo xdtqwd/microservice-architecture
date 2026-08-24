@@ -62,8 +62,8 @@ func (s *OrderService) GetOrders(ctx context.Context, limit, offset int) ([]repo
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	if offset < 0 {
-		offset = 0
+	if limit > maxLimit {
+		limit = maxLimit
 	}
 	return s.repo.GetOrders(ctx, limit, offset)
 }

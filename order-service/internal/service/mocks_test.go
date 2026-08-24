@@ -70,7 +70,14 @@ func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*repository.Order,
 }
 
 func (m *mockRepo) GetOrders(ctx context.Context, limit, offset int) ([]repository.Order, error) {
-	return m.orders, nil
+	if offset >= len(m.orders) {
+		return []repository.Order{}, nil
+	}
+	end := offset + limit
+	if end > len(m.orders) {
+		end = len(m.orders)
+	}
+	return m.orders[offset:end], nil
 }
 func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	for i, o := range m.orders {
