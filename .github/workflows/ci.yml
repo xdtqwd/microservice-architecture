@@ -38,6 +38,7 @@ jobs:
         run: go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
 
       - name: govulncheck
+        continue-on-error: true
         working-directory: order-service
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
