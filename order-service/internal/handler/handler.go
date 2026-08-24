@@ -30,10 +30,18 @@ func New(orderSvc *service.OrderService, productSvc *service.ProductService) *Ha
 func (h *Handler) GetProducts(w http.ResponseWriter, r *http.Request) {
 	products, err := h.productSvc.GetProducts(r.Context())
 	if err != nil {
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if err := json.NewEncoder(w).Encode(products); err != nil {
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -52,11 +60,19 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "product not found", http.StatusNotFound)
 			return
 		}
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(product); err != nil {
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -89,6 +105,10 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(map[string]int{"id": orderID}); err != nil {
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -98,11 +118,19 @@ func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	orders, err := h.orderSvc.GetOrders(r.Context(), limit, offset)
 	if err != nil {
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(orders); err != nil {
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -119,11 +147,19 @@ func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "order not found", http.StatusNotFound)
 			return
 		}
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(order); err != nil {
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -139,6 +175,10 @@ func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "order not found", http.StatusNotFound)
 			return
 		}
+		if errors.Is(err, apperrors.ErrOrderAlreadyCancelled) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -147,7 +187,6 @@ func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
-
 func (h *Handler) InvalidateProductCache(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
@@ -156,11 +195,19 @@ func (h *Handler) InvalidateProductCache(w http.ResponseWriter, r *http.Request)
 	}
 	err = h.productSvc.InvalidateCache(r.Context(), id)
 	if err != nil {
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte("cache invalidated")); err != nil {
+		if err.Error() == "order already cancelled" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 

@@ -3,12 +3,16 @@ package service
 import (
 	"context"
 	"errors"
+	"order-service/internal/apperrors"
 	"order-service/internal/repository"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type OrderService struct {
 	repo OrderRepository
 }
+
 type CreateOrderItem struct {
 	ProductID int
 	Quantity  int
@@ -68,8 +72,11 @@ func (s *OrderService) CancelOrder(ctx context.Context, id int) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if order == nil {
+		return 0, pgx.ErrNoRows
+	}
 	if order.Status == "cancelled" {
-		return 0, errors.New("order already cancelled")
+		return 0, apperrors.ErrOrderAlreadyCancelled
 	}
 	return s.repo.CancelOrder(ctx, id)
 }
