@@ -12,11 +12,6 @@ const (
 	maxLimit     = 100
 )
 
-type CreateOrderItem struct {
-	ProductID int
-	Quantity  int
-}
-
 type OrderService struct {
 	repo OrderRepository
 }
@@ -25,7 +20,7 @@ func NewOrderService(repo OrderRepository) *OrderService {
 	return &OrderService{repo: repo}
 }
 
-func (s *OrderService) CreateOrder(ctx context.Context, items []CreateOrderItem) (int, error) {
+func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem) (int, error) {
 	if len(items) == 0 {
 		return 0, errors.New("order must have at least one item")
 	}
