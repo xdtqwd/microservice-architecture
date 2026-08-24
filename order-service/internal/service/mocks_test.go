@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"order-service/internal/repository"
 	"time"
 
@@ -10,10 +11,12 @@ import (
 )
 
 type mockRepo struct {
-	orders   []repository.Order
-	products []repository.Product
-	nextID   int
+	orders     []repository.Order
+	products   []repository.Product
+	nextID     int
+	forceError error
 }
+
 type mockCache struct {
 	data map[string][]byte
 }
@@ -29,6 +32,7 @@ func (c *mockCache) Get(ctx context.Context, key string, dest interface{}) error
 	}
 	return json.Unmarshal(val, dest)
 }
+
 func (c *mockCache) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -54,6 +58,16 @@ func newMockRepo() *mockRepo {
 }
 
 func (m *mockRepo) CreateOrder(ctx context.Context, items []repository.OrderItem) (int, error) {
+	if m.forceError != nil {
+		return 0, m.forceError
+	}
+	for _, item := range items {
+		for _, p := range m.products {
+			if p.ID == item.ProductID && p.Stock < item.Quantity {
+				return 0, errors.New("insufficient stock")
+			}
+		}
+	}
 	id := m.nextID
 	m.nextID++
 	m.orders = append(m.orders, repository.Order{ID: id, Status: "pending", Items: items})
@@ -72,6 +86,7 @@ func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*repository.Order,
 func (m *mockRepo) GetOrders(ctx context.Context) ([]repository.Order, error) {
 	return m.orders, nil
 }
+
 func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	for i, o := range m.orders {
 		if o.ID == id {

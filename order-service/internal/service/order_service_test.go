@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"order-service/internal/repository"
 	"testing"
 
@@ -94,5 +95,26 @@ func TestCancelOrder_AlreadyCancelled(t *testing.T) {
 
 	svc.CancelOrder(ctx, id)
 	_, err := svc.CancelOrder(ctx, id)
+	assert.Error(t, err)
+}
+
+
+func TestCreateOrder_InsufficientStock(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRepo()
+	svc := NewOrderService(repo)
+
+	items := []repository.OrderItem{{ProductID: 2, Quantity: 1}}
+	_, err := svc.repo.CreateOrder(ctx, items)
+	assert.Error(t, err)
+}
+
+func TestCreateOrder_DBError(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRepo()
+	repo.forceError = errors.New("db connection failed")
+	svc := NewOrderService(repo)
+
+	_, err := svc.repo.CreateOrder(ctx, []repository.OrderItem{{ProductID: 1, Quantity: 1}})
 	assert.Error(t, err)
 }
