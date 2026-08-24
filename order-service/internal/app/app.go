@@ -85,6 +85,7 @@ func (a *App) Run() error {
 
 	if err := a.server.Shutdown(ctx); err != nil {
 		a.logger.Error("server shutdown error", zap.Error(err))
+		return err
 	}
 	a.logger.Info("HTTP server stopped")
 
