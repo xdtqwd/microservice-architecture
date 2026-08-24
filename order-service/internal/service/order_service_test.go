@@ -46,14 +46,17 @@ func TestGetOrders_ReturnsAll(t *testing.T) {
 	svc := NewOrderService(repo)
 
 	items := []repository.OrderItem{{ProductID: 1, Quantity: 1, Price: 150000}}
-	svc.CreateOrder(ctx, items)
-	svc.CreateOrder(ctx, items)
+
+	_, err := svc.CreateOrder(ctx, items)
+	assert.NoError(t, err)
+
+	_, err = svc.CreateOrder(ctx, items)
+	assert.NoError(t, err)
 
 	orders, err := svc.GetOrders(ctx)
 	assert.NoError(t, err)
 	assert.Len(t, orders, 2)
 }
-
 func TestCreateOrder_InvalidQuantity(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
@@ -93,8 +96,10 @@ func TestCancelOrder_AlreadyCancelled(t *testing.T) {
 	items := []repository.OrderItem{{ProductID: 1, Quantity: 1, Price: 150000}}
 	id, _ := svc.CreateOrder(ctx, items)
 
-	svc.CancelOrder(ctx, id)
 	_, err := svc.CancelOrder(ctx, id)
+	assert.NoError(t, err)
+
+	_, err = svc.CancelOrder(ctx, id)
 	assert.Error(t, err)
 }
 

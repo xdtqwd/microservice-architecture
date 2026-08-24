@@ -1,6 +1,6 @@
 module order-service
 
-go 1.25.7
+go 1.25.13
 
 require (
 	github.com/gorilla/mux v1.8.1
@@ -18,8 +18,8 @@ require (
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
-	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.29.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
