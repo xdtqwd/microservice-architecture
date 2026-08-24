@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"order-service/internal/domain"
 )
 
 func TestGetProductByID_CacheMiss(t *testing.T) {
@@ -59,7 +60,7 @@ func TestGetOrders_LimitCappedToMax(t *testing.T) {
 	repo := newMockRepo()
 	svc := NewOrderService(repo)
 
-	items := []CreateOrderItem{{ProductID: 1, Quantity: 1}}
+	items := []domain.CreateOrderItem{{ProductID: 1, Quantity: 1}}
 	for i := 0; i < 5; i++ {
 		_, err := svc.CreateOrder(ctx, items)
 		assert.NoError(t, err)
