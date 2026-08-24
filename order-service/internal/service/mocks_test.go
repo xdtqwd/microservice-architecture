@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"order-service/internal/apperrors"
 	"order-service/internal/repository"
 	"time"
 
@@ -54,12 +55,21 @@ func newMockRepo() *mockRepo {
 }
 
 func (m *mockRepo) CreateOrder(ctx context.Context, items []repository.OrderItem) (int, error) {
+	for _, item := range items {
+		for i, p := range m.products {
+			if p.ID == item.ProductID {
+				if p.Stock < item.Quantity {
+					return 0, apperrors.ErrInsufficientStock
+				}
+				m.products[i].Stock -= item.Quantity
+			}
+		}
+	}
 	id := m.nextID
 	m.nextID++
 	m.orders = append(m.orders, repository.Order{ID: id, Status: "pending", Items: items})
 	return id, nil
 }
-
 func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*repository.Order, error) {
 	for _, o := range m.orders {
 		if o.ID == id {

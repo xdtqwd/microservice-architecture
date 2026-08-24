@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"order-service/internal/apperrors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -106,4 +108,17 @@ func TestCancelOrder_AlreadyCancelled(t *testing.T) {
 
 	_, err = svc.CancelOrder(ctx, id)
 	assert.Error(t, err)
+}
+func TestCreateOrder_InsufficientStock(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRepo()
+	svc := NewOrderService(repo)
+
+	items := []CreateOrderItem{
+		{ProductID: 2, Quantity: 1},
+	}
+
+	_, err := svc.CreateOrder(ctx, items)
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, apperrors.ErrInsufficientStock))
 }
