@@ -114,9 +114,10 @@ func TestGetOrders_Pagination(t *testing.T) {
 	svc := NewOrderService(repo)
 
 	items := []CreateOrderItem{{ProductID: 1, Quantity: 1}}
-	svc.CreateOrder(ctx, items)
-	svc.CreateOrder(ctx, items)
-	svc.CreateOrder(ctx, items)
+	for i := 0; i < 5; i++ {
+		_, err := svc.CreateOrder(ctx, items)
+		assert.NoError(t, err)
+	}
 
 	orders, err := svc.GetOrders(ctx, 10000, 0)
 	assert.NoError(t, err)
@@ -125,4 +126,12 @@ func TestGetOrders_Pagination(t *testing.T) {
 	orders, err = svc.GetOrders(ctx, -1, 0)
 	assert.NoError(t, err)
 	assert.NotNil(t, orders)
+
+	orders, err = svc.GetOrders(ctx, 2, 0)
+	assert.NoError(t, err)
+	assert.Len(t, orders, 2)
+
+	orders, err = svc.GetOrders(ctx, 2, 2)
+	assert.NoError(t, err)
+	assert.Len(t, orders, 2)
 }
