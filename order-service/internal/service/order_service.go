@@ -14,6 +14,9 @@ const (
 	maxLimit     = 100
 )
 
+const (
+)
+
 type OrderService struct {
 	repo OrderRepository
 }
