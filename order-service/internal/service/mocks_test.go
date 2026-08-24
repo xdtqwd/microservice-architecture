@@ -69,7 +69,7 @@ func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*repository.Order,
 	return nil, nil
 }
 
-func (m *mockRepo) GetOrders(ctx context.Context) ([]repository.Order, error) {
+func (m *mockRepo) GetOrders(ctx context.Context, limit, offset int) ([]repository.Order, error) {
 	return m.orders, nil
 }
 func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
