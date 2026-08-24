@@ -15,8 +15,6 @@ const (
 )
 
 const (
-	defaultLimit = 50
-	maxLimit     = 100
 )
 
 type OrderService struct {
