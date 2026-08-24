@@ -84,15 +84,15 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]service.CreateOrderItem, len(reqs))
+	svcItems := make([]service.CreateOrderItem, len(reqs))
 	for i, req := range reqs {
-		items[i] = service.CreateOrderItem{
+		svcItems[i] = service.CreateOrderItem{
 			ProductID: req.ProductID,
 			Quantity:  req.Quantity,
 		}
 	}
 
-	orderID, err := h.orderSvc.CreateOrder(r.Context(), items)
+	orderID, err := h.orderSvc.CreateOrder(r.Context(), svcItems)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrInsufficientStock) {
 			http.Error(w, "insufficient stock", http.StatusConflict)

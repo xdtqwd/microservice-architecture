@@ -6,6 +6,10 @@ import (
 	"order-service/internal/service"
 )
 
+type CreateOrderItem struct {
+	ProductID int
+	Quantity  int
+}
 type OrderService interface {
 	CreateOrder(ctx context.Context, items []service.CreateOrderItem) (int, error)
 	GetOrders(ctx context.Context, limit, offset int) ([]repository.Order, error)
