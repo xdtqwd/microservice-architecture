@@ -89,7 +89,9 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
-	orders, err := h.orderSvc.GetOrders(r.Context())
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	orders, err := h.orderSvc.GetOrders(r.Context(), limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

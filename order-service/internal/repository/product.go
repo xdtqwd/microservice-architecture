@@ -1,8 +1,6 @@
 package repository
 
-import (
-	"context"
-)
+import "context"
 
 type Product struct {
 	ID    int
@@ -28,11 +26,13 @@ func (r *Repository) GetProducts(ctx context.Context) ([]Product, error) {
 		}
 		products = append(products, p)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return products, nil
 }
 
 func (r *Repository) GetProductByID(ctx context.Context, id int) (*Product, error) {
-
 	var p Product
 	err := r.pool.QueryRow(ctx,
 		"SELECT id, name, price, stock FROM products WHERE id = $1", id).

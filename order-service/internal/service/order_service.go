@@ -49,8 +49,14 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []CreateOrderItem)
 
 	return s.repo.CreateOrder(ctx, orderItems)
 }
-func (s *OrderService) GetOrders(ctx context.Context) ([]repository.Order, error) {
-	return s.repo.GetOrders(ctx)
+func (s *OrderService) GetOrders(ctx context.Context, limit, offset int) ([]repository.Order, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.repo.GetOrders(ctx, limit, offset)
 }
 
 func (s *OrderService) GetOrderByID(ctx context.Context, id int) (*repository.Order, error) {

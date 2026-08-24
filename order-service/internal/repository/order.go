@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"order-service/internal/apperrors"
-
 	"time"
 )
 
@@ -72,12 +71,32 @@ func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	rows, err := r.pool.Query(ctx,
+		"SELECT id, order_id, product_id, quantity, price FROM order_items WHERE order_id = $1", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item OrderItem
+		err = rows.Scan(&item.ID, &item.OrderID, &item.ProductID, &item.Quantity, &item.Price)
+		if err != nil {
+			return nil, err
+		}
+		o.Items = append(o.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return &o, nil
 }
 
-func (r *Repository) GetOrders(ctx context.Context) ([]Order, error) {
+func (r *Repository) GetOrders(ctx context.Context, limit, offset int) ([]Order, error) {
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, status, created_at FROM orders")
+		"SELECT id, status, created_at FROM orders ORDER BY id LIMIT $1 OFFSET $2",
+		limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +110,9 @@ func (r *Repository) GetOrders(ctx context.Context) ([]Order, error) {
 			return nil, err
 		}
 		orders = append(orders, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return orders, nil
 }

@@ -56,7 +56,7 @@ func TestGetOrders_ReturnsAll(t *testing.T) {
 	_, err = svc.CreateOrder(ctx, items)
 	assert.NoError(t, err)
 
-	orders, err := svc.GetOrders(ctx)
+	orders, err := svc.GetOrders(ctx, 10, 0)
 	assert.NoError(t, err)
 	assert.Len(t, orders, 2)
 }
