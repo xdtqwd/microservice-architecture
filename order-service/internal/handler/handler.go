@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"order-service/internal/apperrors"
 	"order-service/internal/domain"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
+	"go.uber.org/zap"
 )
 
 type OrderService interface {
@@ -29,10 +29,7 @@ type ProductService interface {
 type Handler struct {
 	orderSvc   OrderService
 	productSvc ProductService
-}
-
-func New(orderSvc OrderService, productSvc ProductService) *Handler {
-	return &Handler{orderSvc: orderSvc, productSvc: productSvc}
+	logger     *zap.Logger
 }
 
 type CreateOrderRequest struct {
@@ -40,22 +37,23 @@ type CreateOrderRequest struct {
 	Quantity  int `json:"quantity"`
 }
 
+func New(orderSvc OrderService, productSvc ProductService, logger *zap.Logger) *Handler {
+	return &Handler{orderSvc: orderSvc, productSvc: productSvc, logger: logger}
+}
+
 func (h *Handler) GetProducts(w http.ResponseWriter, r *http.Request) {
 	products, err := h.productSvc.GetProducts(r.Context())
 	if err != nil {
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, h.logger, err)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(products); err != nil {
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	responses := make([]ProductResponse, len(products))
+	for i, p := range products {
+		responses[i] = productToResponse(&p)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(responses); err != nil {
+		writeError(w, h.logger, err)
 	}
 }
 
@@ -64,28 +62,24 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, h.logger, domain.ErrProductNotFound)
 		return
 	}
 	product, err := h.productSvc.GetProductByID(ctx, id)
 	if err != nil {
-		if errors.Is(err, domain.ErrProductNotFound) {
-			http.Error(w, "product not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, h.logger, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(productToResponse(product)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, h.logger, err)
 	}
 }
 
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	var reqs []CreateOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, h.logger, errors.New("invalid request body"))
 		return
 	}
 
@@ -99,34 +93,23 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	orderID, err := h.orderSvc.CreateOrder(r.Context(), items)
 	if err != nil {
-		if errors.Is(err, domain.ErrInsufficientStock) {
-			http.Error(w, "insufficient stock", http.StatusConflict)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, h.logger, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(map[string]int{"id": orderID}); err != nil {
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, h.logger, err)
 	}
 }
 
 func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
 	orders, err := h.orderSvc.GetOrders(r.Context(), limit, offset)
 	if err != nil {
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, h.logger, err)
 		return
 	}
 	responses := make([]OrderResponse, len(orders))
@@ -134,81 +117,60 @@ func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 		responses[i] = orderToResponse(&o)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(orders); err != nil {
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := json.NewEncoder(w).Encode(responses); err != nil {
+		writeError(w, h.logger, err)
 	}
 }
 
 func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, h.logger, domain.ErrOrderNotFound)
 		return
 	}
 	order, err := h.orderSvc.GetOrderByID(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, domain.ErrOrderNotFound) {
-			http.Error(w, "order not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, h.logger, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(orderToResponse(order)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, h.logger, err)
 	}
 }
 
 func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, h.logger, domain.ErrOrderNotFound)
 		return
 	}
 	cancelledID, err := h.orderSvc.CancelOrder(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, domain.ErrOrderNotFound) {
-			http.Error(w, "order not found", http.StatusNotFound)
-			return
-		}
-		if errors.Is(err, apperrors.ErrOrderAlreadyCancelled) {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, h.logger, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]int{"cancelled_id": cancelledID}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, h.logger, err)
 	}
 }
+
 func (h *Handler) InvalidateProductCache(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, h.logger, domain.ErrProductNotFound)
 		return
 	}
-	err = h.productSvc.InvalidateCache(r.Context(), id)
-	if err != nil {
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err = h.productSvc.InvalidateCache(r.Context(), id); err != nil {
+		writeError(w, h.logger, err)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte("cache invalidated")); err != nil {
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
+		writeError(w, h.logger, err)
 	}
 }
+
+// убедимся что service импортируется

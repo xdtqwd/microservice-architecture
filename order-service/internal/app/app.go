@@ -42,7 +42,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	productRepo := repository.NewProductRepo(pool)
 	orderSvc := service.NewOrderService(orderRepo)
 	productSvc := service.NewProductService(productRepo, redisCache, logger)
-	h := handler.New(orderSvc, productSvc)
+	h := handler.New(orderSvc, productSvc, logger)
 	r := setupRoutes(h)
 	return &App{
 		server: &http.Server{Addr: cfg.Port, Handler: r},
