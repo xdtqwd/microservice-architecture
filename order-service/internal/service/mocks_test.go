@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"encoding/json"
 	"order-service/internal/domain"
 	"time"
@@ -66,7 +67,7 @@ func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, err
 			return &o, nil
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("GetOrderByID: %w", domain.ErrOrderNotFound)
 }
 
 func (m *mockRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
@@ -98,5 +99,5 @@ func (m *mockRepo) GetProductByID(ctx context.Context, id int) (*domain.Product,
 			return &p, nil
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("GetOrderByID: %w", domain.ErrOrderNotFound)
 }

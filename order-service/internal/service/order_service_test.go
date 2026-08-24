@@ -88,7 +88,7 @@ func TestGetOrderByID_NotFound(t *testing.T) {
 	svc := NewOrderService(repo)
 
 	order, err := svc.GetOrderByID(ctx, 999)
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, domain.ErrOrderNotFound)
 	assert.Nil(t, order)
 }
 
