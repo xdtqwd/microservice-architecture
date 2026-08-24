@@ -5,17 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"order-service/internal/apperrors"
 	"order-service/internal/domain"
-	"order-service/internal/service"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/jackc/pgx/v5"
 )
 
 type OrderService interface {
-	CreateOrder(ctx context.Context, items []service.CreateOrderItem) (int, error)
+	CreateOrder(ctx context.Context, items []domain.CreateOrderItem) (int, error)
 	GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error)
 	GetOrderByID(ctx context.Context, id int) (*domain.Order, error)
 	CancelOrder(ctx context.Context, id int) (int, error)
@@ -70,23 +69,15 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 	}
 	product, err := h.productSvc.GetProductByID(ctx, id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, domain.ErrProductNotFound) {
 			http.Error(w, "product not found", http.StatusNotFound)
-			return
-		}
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(product); err != nil {
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
+	if err := json.NewEncoder(w).Encode(productToResponse(product)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -98,9 +89,9 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]service.CreateOrderItem, len(reqs))
+	items := make([]domain.CreateOrderItem, len(reqs))
 	for i, req := range reqs {
-		items[i] = service.CreateOrderItem{
+		items[i] = domain.CreateOrderItem{
 			ProductID: req.ProductID,
 			Quantity:  req.Quantity,
 		}
@@ -160,23 +151,15 @@ func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 	}
 	order, err := h.orderSvc.GetOrderByID(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, domain.ErrOrderNotFound) {
 			http.Error(w, "order not found", http.StatusNotFound)
-			return
-		}
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(order); err != nil {
-		if err.Error() == "order already cancelled" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
+	if err := json.NewEncoder(w).Encode(orderToResponse(order)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -189,7 +172,7 @@ func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	cancelledID, err := h.orderSvc.CancelOrder(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, domain.ErrOrderNotFound) {
 			http.Error(w, "order not found", http.StatusNotFound)
 			return
 		}

@@ -69,9 +69,9 @@ func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, err
 	return nil, nil
 }
 
-func (m *mockRepo) GetOrders(ctx context.Context, limit, offset int) ([]repository.Order, error) {
+func (m *mockRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
 	if offset >= len(m.orders) {
-		return []repository.Order{}, nil
+		return []domain.Order{}, nil
 	}
 	end := offset + limit
 	if end > len(m.orders) {

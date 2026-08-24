@@ -23,3 +23,8 @@ type Product struct {
 	Price float64
 	Stock int
 }
+
+type CreateOrderItem struct {
+	ProductID int
+	Quantity  int
+}
