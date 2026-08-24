@@ -12,13 +12,6 @@ const (
 	maxLimit     = 100
 )
 
-const (
-)
-
-type OrderService struct {
-	repo OrderRepository
-}
-
 type CreateOrderItem struct {
 	ProductID int
 	Quantity  int
