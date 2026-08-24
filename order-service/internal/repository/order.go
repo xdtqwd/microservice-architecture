@@ -2,8 +2,12 @@ package repository
 
 import (
 	"context"
-	"order-service/internal/apperrors"
+	"errors"
+	"fmt"
+	"order-service/internal/domain"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type Order struct {
@@ -76,7 +80,10 @@ func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, er
 		"SELECT id, status, created_at FROM orders WHERE id = $1", id).
 		Scan(&o.ID, &o.Status, &o.CreatedAt)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("GetOrderByID: %w", domain.ErrOrderNotFound)
+		}
+		return nil, fmt.Errorf("GetOrderByID: %w", err)
 	}
 
 	rows, err := r.pool.Query(ctx,

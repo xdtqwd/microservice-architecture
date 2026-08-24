@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"order-service/internal/apperrors"
-	"order-service/internal/repository"
-
-	"github.com/jackc/pgx/v5"
+	"order-service/internal/domain"
 )
 
 const (
@@ -59,12 +57,16 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []CreateOrderItem)
 
 	return s.repo.CreateOrder(ctx, orderItems)
 }
-func (s *OrderService) GetOrders(ctx context.Context, limit, offset int) ([]repository.Order, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 50
+
+func (s *OrderService) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
+	if limit <= 0 {
+		limit = defaultLimit
 	}
 	if limit > maxLimit {
 		limit = maxLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	return s.repo.GetOrders(ctx, limit, offset)
 }
@@ -77,9 +79,6 @@ func (s *OrderService) CancelOrder(ctx context.Context, id int) (int, error) {
 	order, err := s.repo.GetOrderByID(ctx, id)
 	if err != nil {
 		return 0, err
-	}
-	if order == nil {
-		return 0, pgx.ErrNoRows
 	}
 	if order.Status == "cancelled" {
 		return 0, apperrors.ErrOrderAlreadyCancelled
