@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"errors"
 	"order-service/internal/domain"
 	"time"
 
@@ -33,7 +34,7 @@ func (s *ProductService) GetProductByID(ctx context.Context, id int) (*domain.Pr
 		s.logger.Info("cache hit:", zap.String("key", key))
 		return &product, nil
 	}
-	if err != redis.Nil {
+	if !errors.Is(err, redis.Nil) {
 		s.logger.Info("redis error:", zap.Error(err))
 	}
 	s.logger.Info("cache miss:", zap.String("key", key))

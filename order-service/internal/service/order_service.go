@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"order-service/internal/apperrors"
 	"order-service/internal/domain"
 )
 
@@ -69,7 +68,7 @@ func (s *OrderService) CancelOrder(ctx context.Context, id int) (int, error) {
 		return 0, err
 	}
 	if order.Status == "cancelled" {
-		return 0, apperrors.ErrOrderAlreadyCancelled
+		return 0, domain.ErrOrderAlreadyCancelled
 	}
 	return s.repo.CancelOrder(ctx, id)
 }

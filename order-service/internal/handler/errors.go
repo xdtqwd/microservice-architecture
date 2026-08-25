@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"order-service/internal/apperrors"
 	"order-service/internal/domain"
 
 	"go.uber.org/zap"
@@ -19,7 +18,7 @@ var errToStatus = map[error]int{
 	domain.ErrProductNotFound:          http.StatusNotFound,
 	domain.ErrInsufficientStock:        http.StatusConflict,
 	domain.ErrInvalidStatusTransition:  http.StatusConflict,
-	apperrors.ErrOrderAlreadyCancelled: http.StatusConflict,
+	domain.ErrOrderAlreadyCancelled: http.StatusConflict,
 }
 
 func writeError(w http.ResponseWriter, logger *zap.Logger, err error) {

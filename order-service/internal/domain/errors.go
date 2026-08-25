@@ -8,3 +8,5 @@ var (
 	ErrInsufficientStock       = errors.New("insufficient stock")
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
 )
+
+var ErrOrderAlreadyCancelled = errors.New("order already cancelled")
