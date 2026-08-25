@@ -2,16 +2,17 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"encoding/json"
-	"order-service/internal/repository"
+	"order-service/internal/domain"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
 type mockRepo struct {
-	orders   []repository.Order
-	products []repository.Product
+	orders   []domain.Order
+	products []domain.Product
 	nextID   int
 }
 type mockCache struct {
@@ -46,32 +47,32 @@ func (c *mockCache) Delete(ctx context.Context, key string) error {
 func newMockRepo() *mockRepo {
 	return &mockRepo{
 		nextID: 1,
-		products: []repository.Product{
+		products: []domain.Product{ // ✅
 			{ID: 1, Name: "MacBook Pro", Price: 150000, Stock: 10},
 			{ID: 2, Name: "iPhone 15", Price: 80000, Stock: 0},
 		},
 	}
 }
 
-func (m *mockRepo) CreateOrder(ctx context.Context, items []repository.OrderItem) (int, error) {
+func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error) {
 	id := m.nextID
 	m.nextID++
-	m.orders = append(m.orders, repository.Order{ID: id, Status: "pending", Items: items})
+	m.orders = append(m.orders, domain.Order{ID: id, Status: "pending", Items: items})
 	return id, nil
 }
 
-func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*repository.Order, error) {
+func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
 	for _, o := range m.orders {
 		if o.ID == id {
 			return &o, nil
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("GetOrderByID: %w", domain.ErrOrderNotFound)
 }
 
-func (m *mockRepo) GetOrders(ctx context.Context, limit, offset int) ([]repository.Order, error) {
+func (m *mockRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
 	if offset >= len(m.orders) {
-		return []repository.Order{}, nil
+		return []domain.Order{}, nil
 	}
 	end := offset + limit
 	if end > len(m.orders) {
@@ -88,15 +89,15 @@ func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	}
 	return 0, nil
 }
-func (m *mockRepo) GetProducts(ctx context.Context) ([]repository.Product, error) {
+func (m *mockRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
 	return m.products, nil
 }
 
-func (m *mockRepo) GetProductByID(ctx context.Context, id int) (*repository.Product, error) {
+func (m *mockRepo) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
 	for _, p := range m.products {
 		if p.ID == id {
 			return &p, nil
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("GetOrderByID: %w", domain.ErrOrderNotFound)
 }

@@ -1,6 +1,13 @@
 package repository
 
-import "context"
+import (
+	"context"
+	"errors"
+	"fmt"
+	"order-service/internal/domain"
+
+	"github.com/jackc/pgx/v5"
+)
 
 type Product struct {
 	ID    int
@@ -9,7 +16,7 @@ type Product struct {
 	Stock int
 }
 
-func (r *Repository) GetProducts(ctx context.Context) ([]Product, error) {
+func (r *ProductRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
 	rows, err := r.pool.Query(ctx,
 		"SELECT id, name, price, stock FROM products")
 	if err != nil {
@@ -17,9 +24,9 @@ func (r *Repository) GetProducts(ctx context.Context) ([]Product, error) {
 	}
 	defer rows.Close()
 
-	var products []Product
+	var products []domain.Product
 	for rows.Next() {
-		var p Product
+		var p domain.Product
 		err = rows.Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
 		if err != nil {
 			return nil, err
@@ -32,13 +39,16 @@ func (r *Repository) GetProducts(ctx context.Context) ([]Product, error) {
 	return products, nil
 }
 
-func (r *Repository) GetProductByID(ctx context.Context, id int) (*Product, error) {
-	var p Product
+func (r *ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
+	var p domain.Product
 	err := r.pool.QueryRow(ctx,
 		"SELECT id, name, price, stock FROM products WHERE id = $1", id).
 		Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("GetProductByID: %w", domain.ErrProductNotFound)
+		}
+		return nil, fmt.Errorf("GetProductByID: %w", err)
 	}
 	return &p, nil
 }

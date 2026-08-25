@@ -2,20 +2,20 @@ package service
 
 import (
 	"context"
-	"order-service/internal/repository"
+	"order-service/internal/domain"
 	"time"
 )
 
 type OrderRepository interface {
-	CreateOrder(ctx context.Context, items []repository.OrderItem) (int, error)
-	GetOrderByID(ctx context.Context, id int) (*repository.Order, error)
-	GetOrders(ctx context.Context, limit, offset int) ([]repository.Order, error)
+	CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error)
+	GetOrderByID(ctx context.Context, id int) (*domain.Order, error)
+	GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error)
 	CancelOrder(ctx context.Context, id int) (int, error)
-	GetProductByID(ctx context.Context, id int) (*repository.Product, error)
 }
+
 type ProductRepository interface {
-	GetProducts(ctx context.Context) ([]repository.Product, error)
-	GetProductByID(ctx context.Context, id int) (*repository.Product, error)
+	GetProducts(ctx context.Context) ([]domain.Product, error)
+	GetProductByID(ctx context.Context, id int) (*domain.Product, error)
 }
 
 type Cache interface {

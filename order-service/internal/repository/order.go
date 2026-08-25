@@ -2,8 +2,12 @@ package repository
 
 import (
 	"context"
-	"order-service/internal/apperrors"
+	"errors"
+	"fmt"
+	"order-service/internal/domain"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type Order struct {
@@ -21,7 +25,7 @@ type OrderItem struct {
 	Price     float64
 }
 
-func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, error) {
+func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return 0, err
@@ -37,6 +41,13 @@ func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, e
 	}
 
 	for _, item := range items {
+		var price float64
+		err = tx.QueryRow(ctx,
+			"SELECT price FROM products WHERE id = $1", item.ProductID).Scan(&price)
+		if err != nil {
+			return 0, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
+		}
+
 		tag, err := tx.Exec(ctx,
 			"UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1",
 			item.Quantity, item.ProductID)
@@ -44,13 +55,13 @@ func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, e
 			return 0, err
 		}
 		if tag.RowsAffected() == 0 {
-			return 0, apperrors.ErrInsufficientStock
+			return 0, fmt.Errorf("CreateOrder: %w", domain.ErrInsufficientStock)
 		}
 
 		_, err = tx.Exec(ctx,
 			`INSERT INTO order_items (order_id, product_id, quantity, price)
              VALUES ($1, $2, $3, $4)`,
-			orderID, item.ProductID, item.Quantity, item.Price)
+			orderID, item.ProductID, item.Quantity, price)
 		if err != nil {
 			return 0, err
 		}
@@ -63,13 +74,16 @@ func (r *Repository) CreateOrder(ctx context.Context, items []OrderItem) (int, e
 	return orderID, nil
 }
 
-func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
-	var o Order
+func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
+	var o domain.Order
 	err := r.pool.QueryRow(ctx,
 		"SELECT id, status, created_at FROM orders WHERE id = $1", id).
 		Scan(&o.ID, &o.Status, &o.CreatedAt)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("GetOrderByID: %w", domain.ErrOrderNotFound)
+		}
+		return nil, fmt.Errorf("GetOrderByID: %w", err)
 	}
 
 	rows, err := r.pool.Query(ctx,
@@ -80,7 +94,7 @@ func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var item OrderItem
+		var item domain.OrderItem
 		err = rows.Scan(&item.ID, &item.OrderID, &item.ProductID, &item.Quantity, &item.Price)
 		if err != nil {
 			return nil, err
@@ -93,7 +107,7 @@ func (r *Repository) GetOrderByID(ctx context.Context, id int) (*Order, error) {
 	return &o, nil
 }
 
-func (r *Repository) GetOrders(ctx context.Context, limit, offset int) ([]Order, error) {
+func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
 	rows, err := r.pool.Query(ctx,
 		"SELECT id, status, created_at FROM orders ORDER BY id LIMIT $1 OFFSET $2",
 		limit, offset)
@@ -102,9 +116,9 @@ func (r *Repository) GetOrders(ctx context.Context, limit, offset int) ([]Order,
 	}
 	defer rows.Close()
 
-	var orders []Order
+	var orders []domain.Order
 	for rows.Next() {
-		var o Order
+		var o domain.Order
 		err = rows.Scan(&o.ID, &o.Status, &o.CreatedAt)
 		if err != nil {
 			return nil, err
@@ -117,7 +131,7 @@ func (r *Repository) GetOrders(ctx context.Context, limit, offset int) ([]Order,
 	return orders, nil
 }
 
-func (r *Repository) CancelOrder(ctx context.Context, id int) (int, error) {
+func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	var cancelledID int
 	err := r.pool.QueryRow(ctx,
 		"UPDATE orders SET status = $1 WHERE id = $2 RETURNING id",
