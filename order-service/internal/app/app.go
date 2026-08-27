@@ -27,30 +27,26 @@ type App struct {
 	cache  *cache.RedisCache
 }
 
-func New(ctx context.Context, logger *zap.Logger) (*App, error) {
-	cfg := config.Load()
-	pool, err := repository.Connect(ctx, cfg.DatabaseURL)
-	if err != nil {
-		return nil, err
-	}
-	redisCache := cache.New(cfg.RedisAddr)
-	if err := redisCache.Ping(ctx); err != nil {
-		return nil, fmt.Errorf("redis connection failed: %w", err)
-	}
-	logger.Info("Redis connected!")
-	orderRepo := repository.NewOrderRepo(pool)
-	productRepo := repository.NewProductRepo(pool)
-	orderSvc := service.NewOrderService(orderRepo)
-	productSvc := service.NewProductService(productRepo, redisCache, logger)
-	h := handler.New(orderSvc, productSvc, logger)
-	r := setupRoutes(h)
-	return &App{
-		server: &http.Server{Addr: cfg.Port, Handler: r},
-		logger: logger,
-		ctx:    ctx,
-		pool:   pool,
-		cache:  redisCache,
-	}, nil
+func newRepositories(pool *pgxpool.Pool) (*repository.OrderRepo, *repository.ProductRepo) {
+	return repository.NewOrderRepo(pool), repository.NewProductRepo(pool)
+}
+
+func newServices(
+	orderRepo *repository.OrderRepo,
+	productRepo *repository.ProductRepo,
+	redisCache *cache.RedisCache,
+	logger *zap.Logger,
+) (*service.OrderService, *service.ProductService) {
+	return service.NewOrderService(orderRepo),
+		service.NewProductService(productRepo, redisCache, logger)
+}
+
+func newHandler(
+	orderSvc *service.OrderService,
+	productSvc *service.ProductService,
+	logger *zap.Logger,
+) *handler.Handler {
+	return handler.New(orderSvc, productSvc, logger)
 }
 
 func setupRoutes(h *handler.Handler) http.Handler {
@@ -63,6 +59,33 @@ func setupRoutes(h *handler.Handler) http.Handler {
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
 	r.HandleFunc("/products/{id}/cache", h.InvalidateProductCache).Methods("DELETE")
 	return r
+}
+
+func New(ctx context.Context, logger *zap.Logger) (*App, error) {
+	cfg := config.Load()
+
+	pool, err := repository.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	redisCache := cache.New(cfg.RedisAddr)
+	if err := redisCache.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("redis connection failed: %w", err)
+	}
+	logger.Info("Redis connected!")
+
+	orderRepo, productRepo := newRepositories(pool)
+	orderSvc, productSvc := newServices(orderRepo, productRepo, redisCache, logger)
+	h := newHandler(orderSvc, productSvc, logger)
+
+	return &App{
+		server: &http.Server{Addr: cfg.Port, Handler: setupRoutes(h)},
+		logger: logger,
+		ctx:    ctx,
+		pool:   pool,
+		cache:  redisCache,
+	}, nil
 }
 
 func (a *App) Run() error {
