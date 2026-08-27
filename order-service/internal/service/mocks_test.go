@@ -69,3 +69,7 @@ func (m *mockRepo) GetProductByID(ctx context.Context, id int) (*domain.Product,
 	}
 	return nil, fmt.Errorf("GetOrderByID: %w", domain.ErrOrderNotFound)
 }
+
+func (m *mockRepo) InvalidateByID(ctx context.Context, id int) error {
+	return nil
+}

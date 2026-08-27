@@ -25,5 +25,5 @@ func (s *ProductService) GetProductByID(ctx context.Context, id int) (*domain.Pr
 }
 
 func (s *ProductService) InvalidateCache(ctx context.Context, id int) error {
-	return nil
+	return s.repo.InvalidateByID(ctx, id)
 }
