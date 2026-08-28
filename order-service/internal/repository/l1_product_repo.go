@@ -14,24 +14,30 @@ const (
 	l1TTL     = 10 * time.Second
 )
 
-type L1ProductRepo struct {
-	repo  *CachedProductRepo
-	cache *lru.LRU[string, *domain.Product]
+func productKey(id int) string {
+	return fmt.Sprintf("product:%d", id)
 }
 
-func NewL1ProductRepo(repo *CachedProductRepo) *L1ProductRepo {
-	cache := lru.NewLRU[string, *domain.Product](l1MaxSize, nil, l1TTL)
+type L1ProductRepo struct {
+	repo  ProductStorage
+	cache *lru.LRU[string, domain.Product]
+}
+
+func NewL1ProductRepo(repo ProductStorage) *L1ProductRepo {
+	cache := lru.NewLRU[string, domain.Product](l1MaxSize, nil, l1TTL)
 	return &L1ProductRepo{repo: repo, cache: cache}
 }
 
 func (r *L1ProductRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
 	return r.repo.GetProducts(ctx)
 }
+
 func (r *L1ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
-	key := fmt.Sprintf("product:%d", id)
+	key := productKey(id)
 
 	if p, ok := r.cache.Get(key); ok {
-		return p, nil
+		copy := p
+		return &copy, nil
 	}
 
 	p, err := r.repo.GetProductByID(ctx, id)
@@ -39,12 +45,11 @@ func (r *L1ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Pro
 		return nil, err
 	}
 
-	r.cache.Add(key, p)
+	r.cache.Add(key, *p)
 	return p, nil
 }
 
 func (r *L1ProductRepo) InvalidateByID(ctx context.Context, id int) error {
-	key := fmt.Sprintf("product:%d", id)
-	r.cache.Remove(key)
+	r.cache.Remove(productKey(id))
 	return r.repo.InvalidateByID(ctx, id)
 }
