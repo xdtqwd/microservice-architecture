@@ -12,8 +12,7 @@ import (
 func TestGetProductByID_CacheMiss(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	cache := newMockCache()
-	svc := NewProductService(repo, cache, zap.NewNop())
+	svc := NewProductService(repo, zap.NewNop())
 
 	product, err := svc.GetProductByID(ctx, 1)
 	assert.NoError(t, err)
@@ -23,8 +22,7 @@ func TestGetProductByID_CacheMiss(t *testing.T) {
 func TestGetProductByID_CacheHit(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	cache := newMockCache()
-	svc := NewProductService(repo, cache, zap.NewNop())
+	svc := NewProductService(repo, zap.NewNop())
 
 	_, err := svc.GetProductByID(ctx, 1)
 	assert.NoError(t, err)
@@ -37,8 +35,7 @@ func TestGetProductByID_CacheHit(t *testing.T) {
 func TestInvalidateCache(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	cache := newMockCache()
-	svc := NewProductService(repo, cache, zap.NewNop())
+	svc := NewProductService(repo, zap.NewNop())
 
 	_, err := svc.GetProductByID(ctx, 1)
 	assert.NoError(t, err)
@@ -48,8 +45,7 @@ func TestInvalidateCache(t *testing.T) {
 func TestGetProducts(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	cache := newMockCache()
-	svc := NewProductService(repo, cache, zap.NewNop())
+	svc := NewProductService(repo, zap.NewNop())
 
 	products, err := svc.GetProducts(ctx)
 	assert.NoError(t, err)

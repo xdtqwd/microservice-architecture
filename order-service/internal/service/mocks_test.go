@@ -3,11 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
-	"encoding/json"
 	"order-service/internal/domain"
-	"time"
 
-	"github.com/redis/go-redis/v9"
 )
 
 type mockRepo struct {
@@ -15,35 +12,6 @@ type mockRepo struct {
 	products []domain.Product
 	nextID   int
 }
-type mockCache struct {
-	data map[string][]byte
-}
-
-func newMockCache() *mockCache {
-	return &mockCache{data: make(map[string][]byte)}
-}
-
-func (c *mockCache) Get(ctx context.Context, key string, dest interface{}) error {
-	val, ok := c.data[key]
-	if !ok {
-		return redis.Nil
-	}
-	return json.Unmarshal(val, dest)
-}
-func (c *mockCache) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	c.data[key] = data
-	return nil
-}
-
-func (c *mockCache) Delete(ctx context.Context, key string) error {
-	delete(c.data, key)
-	return nil
-}
-
 func newMockRepo() *mockRepo {
 	return &mockRepo{
 		nextID: 1,
@@ -100,4 +68,8 @@ func (m *mockRepo) GetProductByID(ctx context.Context, id int) (*domain.Product,
 		}
 	}
 	return nil, fmt.Errorf("GetOrderByID: %w", domain.ErrOrderNotFound)
+}
+
+func (m *mockRepo) InvalidateByID(ctx context.Context, id int) error {
+	return nil
 }

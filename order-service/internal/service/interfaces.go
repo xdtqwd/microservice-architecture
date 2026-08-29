@@ -12,10 +12,10 @@ type OrderRepository interface {
 	GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error)
 	CancelOrder(ctx context.Context, id int) (int, error)
 }
-
 type ProductRepository interface {
 	GetProducts(ctx context.Context) ([]domain.Product, error)
 	GetProductByID(ctx context.Context, id int) (*domain.Product, error)
+	InvalidateByID(ctx context.Context, id int) error
 }
 
 type Cache interface {
