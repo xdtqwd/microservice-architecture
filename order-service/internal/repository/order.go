@@ -5,25 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"order-service/internal/domain"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 )
-
-type Order struct {
-	ID        int
-	Status    string
-	CreatedAt time.Time
-	Items     []OrderItem
-}
-
-type OrderItem struct {
-	ID        int
-	OrderID   int
-	ProductID int
-	Quantity  int
-	Price     float64
-}
 
 func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error) {
 	tx, err := r.pool.Begin(ctx)

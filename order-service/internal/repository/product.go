@@ -9,13 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type Product struct {
-	ID    int
-	Name  string
-	Price float64
-	Stock int
-}
-
 func (r *ProductRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
 	rows, err := r.db.Query(ctx,
 		"SELECT id, name, price, stock FROM products")
@@ -51,4 +44,8 @@ func (r *ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Produ
 		return nil, fmt.Errorf("GetProductByID: %w", err)
 	}
 	return &p, nil
+}
+
+func (r *ProductRepo) InvalidateByID(ctx context.Context, id int) error {
+	return nil
 }
