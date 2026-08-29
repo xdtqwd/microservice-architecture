@@ -48,7 +48,3 @@ func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, ttl
 func (c *RedisCache) Delete(ctx context.Context, key string) error {
 	return c.client.Del(ctx, key).Err()
 }
-
-func (c *RedisCache) Client() *redis.Client {
-	return c.client
-}
