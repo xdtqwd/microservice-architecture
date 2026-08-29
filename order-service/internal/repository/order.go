@@ -86,7 +86,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 
 func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
 	var o domain.Order
-	err := r.pool.QueryRow(ctx,
+	err := r.db.QueryRow(ctx,
 		"SELECT id, status, created_at FROM orders WHERE id = $1", id).
 		Scan(&o.ID, &o.Status, &o.CreatedAt)
 	if err != nil {
@@ -96,7 +96,7 @@ func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, er
 		return nil, fmt.Errorf("GetOrderByID: %w", err)
 	}
 
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		"SELECT id, order_id, product_id, quantity, price FROM order_items WHERE order_id = $1", id)
 	if err != nil {
 		return nil, err
@@ -118,7 +118,7 @@ func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, er
 }
 
 func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		"SELECT id, status, created_at FROM orders ORDER BY id LIMIT $1 OFFSET $2",
 		limit, offset)
 	if err != nil {
@@ -143,7 +143,7 @@ func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.
 
 func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	var cancelledID int
-	err := r.pool.QueryRow(ctx,
+	err := r.db.QueryRow(ctx,
 		"UPDATE orders SET status = $1 WHERE id = $2 RETURNING id",
 		"cancelled", id).Scan(&cancelledID)
 	if err != nil {
