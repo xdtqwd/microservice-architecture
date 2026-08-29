@@ -27,18 +27,19 @@ type App struct {
 	cache  *cache.RedisCache
 }
 
-func newRepositories(pool *pgxpool.Pool) (*repository.OrderRepo, *repository.ProductRepo) {
-	return repository.NewOrderRepo(pool), repository.NewProductRepo(pool)
+func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.ProductStorage) {
+	productRepo := repository.NewProductRepo(pool)
+	cachedProductRepo := repository.NewCachedProductRepo(productRepo, c, logger)
+	return repository.NewOrderRepo(pool), cachedProductRepo
 }
 
 func newServices(
 	orderRepo *repository.OrderRepo,
-	productRepo *repository.ProductRepo,
-	redisCache *cache.RedisCache,
+	productRepo repository.ProductStorage,
 	logger *zap.Logger,
 ) (*service.OrderService, *service.ProductService) {
 	return service.NewOrderService(orderRepo),
-		service.NewProductService(productRepo, redisCache, logger)
+		service.NewProductService(productRepo, logger)
 }
 
 func newHandler(
@@ -75,8 +76,8 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	}
 	logger.Info("Redis connected!")
 
-	orderRepo, productRepo := newRepositories(pool)
-	orderSvc, productSvc := newServices(orderRepo, productRepo, redisCache, logger)
+	orderRepo, productRepo := newRepositories(pool, redisCache, logger)
+	orderSvc, productSvc := newServices(orderRepo, productRepo, logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
 	return &App{
