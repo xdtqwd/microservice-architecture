@@ -31,7 +31,7 @@ type App struct {
 func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.ProductStorage) {
 	productRepo := repository.NewProductRepo(pool)
 	cachedProductRepo := repository.NewCachedProductRepo(productRepo, c, logger)
-	return repository.NewOrderRepo(pool), cachedProductRepo
+	return repository.NewOrderRepo(pool, cachedProductRepo), cachedProductRepo
 }
 
 func newServices(
