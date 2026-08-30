@@ -23,6 +23,7 @@ type CachedProductRepo struct {
 	repo   ProductStorage
 	cache  *cache.RedisCache
 	logger *zap.Logger
+	group  singleflight.Group
 }
 
 func NewCachedProductRepo(repo ProductStorage, c *cache.RedisCache, logger *zap.Logger) *CachedProductRepo {
@@ -38,12 +39,22 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 
 	var p domain.Product
 	if err := r.cache.Get(ctx, key, &p); err == nil {
-		r.logger.Info("cache hit", zap.String("key", key))
+		r.logger.Debug("cache hit", zap.String("key", key))
 		return &p, nil
 	}
 
-	r.logger.Info("cache miss", zap.String("key", key))
-	product, err := r.repo.GetProductByID(ctx, id)
+	r.logger.Debug("cache miss", zap.String("key", key))
+
+	val, err, _ := r.group.Do(key, func() (interface{}, error) {
+		product, err := r.repo.GetProductByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if err := r.cache.Set(ctx, key, product, productTTL); err != nil {
+			r.logger.Error("cache set error", zap.Error(err))
+		}
+		return product, nil
+	})
 	if err != nil {
 		return nil, err
 	}
