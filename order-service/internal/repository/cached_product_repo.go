@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 )
 
 const productTTL = 5 * time.Minute
@@ -47,10 +48,7 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 		return nil, err
 	}
 
-	if err := r.cache.Set(ctx, key, product, productTTL); err != nil {
-		r.logger.Error("cache set error", zap.Error(err))
-	}
-	return product, nil
+	return val.(*domain.Product), nil
 }
 
 func (r *CachedProductRepo) InvalidateByID(ctx context.Context, id int) error {
