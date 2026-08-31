@@ -59,6 +59,7 @@ func setupRoutes(h *handler.Handler) http.Handler {
 	r.HandleFunc("/orders", h.GetOrders).Methods("GET")
 	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
+	r.HandleFunc("/products/{id}/cache", h.InvalidateProductCache).Methods("DELETE")
 	r.Handle("/metrics", promhttp.Handler())
 	return r
 }
