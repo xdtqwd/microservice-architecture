@@ -58,13 +58,12 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 		return nil, err
 	}
 
-	return val.(*domain.Product), nil
+	cp := *val.(*domain.Product)
+	return &cp, nil
 }
 
 func (r *CachedProductRepo) InvalidateByID(ctx context.Context, id int) error {
 	key := fmt.Sprintf("product:%d", id)
-	if err := r.cache.Delete(ctx, key); err != nil {
-		r.logger.Error("cache delete error", zap.Error(err))
-	}
-	return nil
+	r.group.Forget(key)
+	return r.cache.Delete(ctx, key)
 }

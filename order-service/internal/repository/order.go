@@ -73,15 +73,13 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 		return 0, err
 	}
 
-	if r.invalidator != nil {
-		for _, item := range items {
-			if err := r.invalidator.InvalidateByID(ctx, item.ProductID); err != nil {
-				r.logger.Error("cache invalidation failed",
-					zap.Error(err),
-					zap.Int("product_id", item.ProductID),
-					zap.Int("order_id", orderID))
-
-			}
+	invalidCtx := context.Background()
+	for _, item := range items {
+		if err := r.invalidator.InvalidateByID(invalidCtx, item.ProductID); err != nil {
+			r.logger.Error("cache invalidation failed",
+				zap.Error(err),
+				zap.Int("product_id", item.ProductID),
+				zap.Int("order_id", orderID))
 		}
 	}
 
