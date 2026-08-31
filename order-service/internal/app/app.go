@@ -27,15 +27,15 @@ type App struct {
 	cache  *cache.RedisCache
 }
 
-func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.ProductStorage) {
+func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.StorageWithInvalidation) {
 	productRepo := repository.NewProductRepo(pool)
 	cachedProductRepo := repository.NewCachedProductRepo(productRepo, c, logger)
-	return repository.NewOrderRepo(pool), cachedProductRepo
+	return repository.NewOrderRepo(pool, cachedProductRepo, logger), cachedProductRepo
 }
 
 func newServices(
 	orderRepo *repository.OrderRepo,
-	productRepo repository.ProductStorage,
+	productRepo repository.StorageWithInvalidation,
 	logger *zap.Logger,
 ) (*service.OrderService, *service.ProductService) {
 	return service.NewOrderService(orderRepo),
@@ -58,7 +58,6 @@ func setupRoutes(h *handler.Handler) http.Handler {
 	r.HandleFunc("/orders", h.GetOrders).Methods("GET")
 	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
-	r.HandleFunc("/products/{id}/cache", h.InvalidateProductCache).Methods("DELETE")
 	return r
 }
 

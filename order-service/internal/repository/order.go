@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 )
 
 type Order struct {
@@ -71,6 +72,17 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 	if err != nil {
 		return 0, err
 	}
+
+	invalidCtx := context.Background()
+	for _, item := range items {
+		if err := r.invalidator.InvalidateByID(invalidCtx, item.ProductID); err != nil {
+			r.logger.Error("cache invalidation failed",
+				zap.Error(err),
+				zap.Int("product_id", item.ProductID),
+				zap.Int("order_id", orderID))
+		}
+	}
+
 	return orderID, nil
 }
 
