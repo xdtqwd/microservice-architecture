@@ -12,7 +12,3 @@ type Querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
-
-type Invalidator interface {
-	InvalidateByID(ctx context.Context, id int) error
-}
