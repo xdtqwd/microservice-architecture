@@ -2,11 +2,9 @@ package service
 
 import (
 	"context"
-	"errors"
 	"order-service/internal/domain"
 )
 
-var ErrCacheMiss = errors.New("cache miss")
 
 type OrderRepository interface {
 	CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error)
@@ -18,5 +16,4 @@ type OrderRepository interface {
 type ProductRepository interface {
 	GetProducts(ctx context.Context) ([]domain.Product, error)
 	GetProductByID(ctx context.Context, id int) (*domain.Product, error)
-	InvalidateByID(ctx context.Context, id int) error
 }

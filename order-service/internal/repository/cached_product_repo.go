@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"order-service/internal/cache"
 	"order-service/internal/domain"
@@ -16,7 +17,6 @@ const productTTL = 5 * time.Minute
 type ProductStorage interface {
 	GetProducts(ctx context.Context) ([]domain.Product, error)
 	GetProductByID(ctx context.Context, id int) (*domain.Product, error)
-	InvalidateByID(ctx context.Context, id int) error
 }
 
 type CachedProductRepo struct {
@@ -42,6 +42,11 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 		metrics.CacheHits.WithLabelValues("l2").Inc()
 		return &p, nil
 	}
+	if !errors.Is(err, cache.ErrCacheMiss) {
+		r.logger.Error("redis error", zap.Error(err))
+	}
+
+	r.logger.Debug("cache miss", zap.String("key", key))
 
 	r.logger.Debug("cache miss", zap.String("key", key))
 	metrics.CacheMisses.WithLabelValues("l2").Inc()
@@ -58,8 +63,5 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 
 func (r *CachedProductRepo) InvalidateByID(ctx context.Context, id int) error {
 	key := fmt.Sprintf("product:%d", id)
-	if err := r.cache.Delete(ctx, key); err != nil {
-		r.logger.Error("cache delete error", zap.Error(err))
-	}
-	return r.repo.InvalidateByID(ctx, id)
+	return r.cache.Delete(ctx, key)
 }
