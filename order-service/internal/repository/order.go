@@ -136,6 +136,39 @@ func (r *OrderRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Ord
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
+	if len(orders) == 0 {
+		return orders, nil, nil
+	}
+
+	// загружаем items одним запросом ANY($1)
+	ids := make([]int, len(orders))
+	for i, o := range orders {
+		ids[i] = o.ID
+	}
+	itemRows, err := r.pool.Query(ctx,
+		"SELECT id, order_id, product_id, quantity, price FROM order_items WHERE order_id = ANY($1)",
+		ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer itemRows.Close()
+
+	itemsByOrder := make(map[int][]domain.OrderItem)
+	for itemRows.Next() {
+		var item domain.OrderItem
+		if err := itemRows.Scan(&item.ID, &item.OrderID, &item.ProductID, &item.Quantity, &item.Price); err != nil {
+			return nil, nil, err
+		}
+		itemsByOrder[item.OrderID] = append(itemsByOrder[item.OrderID], item)
+	}
+	if err := itemRows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	for i := range orders {
+		orders[i].Items = itemsByOrder[orders[i].ID]
+	}
+
 	var nextCursor *domain.OrderCursor
 	if len(orders) == limit {
 		nextCursor = &domain.OrderCursor{AfterID: orders[len(orders)-1].ID}
