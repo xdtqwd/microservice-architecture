@@ -38,15 +38,20 @@ func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, err
 	return nil, fmt.Errorf("GetOrderByID: %w", domain.ErrOrderNotFound)
 }
 
-func (m *mockRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
-	if offset >= len(m.orders) {
-		return []domain.Order{}, nil
+func (m *mockRepo) GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error) {
+	if len(m.orders) == 0 {
+		return []domain.Order{}, nil, nil
 	}
-	end := offset + limit
+	end := limit
 	if end > len(m.orders) {
 		end = len(m.orders)
 	}
-	return m.orders[offset:end], nil
+	orders := m.orders[:end]
+	var nextCursor *domain.OrderCursor
+	if len(orders) == limit {
+		nextCursor = &domain.OrderCursor{AfterID: orders[len(orders)-1].ID}
+	}
+	return orders, nextCursor, nil
 }
 func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	for i, o := range m.orders {

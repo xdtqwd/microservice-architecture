@@ -45,17 +45,14 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrd
 	return s.repo.CreateOrder(ctx, orderItems)
 }
 
-func (s *OrderService) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
+func (s *OrderService) GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error) {
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 	if limit > maxLimit {
 		limit = maxLimit
 	}
-	if offset < 0 {
-		offset = 0
-	}
-	return s.repo.GetOrders(ctx, limit, offset)
+	return s.repo.GetOrders(ctx, limit, cursor)
 }
 
 func (s *OrderService) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
