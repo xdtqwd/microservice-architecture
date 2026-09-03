@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"order-service/internal/domain"
+	"github.com/shopspring/decimal"
 
 )
 
@@ -16,8 +17,8 @@ func newMockRepo() *mockRepo {
 	return &mockRepo{
 		nextID: 1,
 		products: []domain.Product{ // ✅
-			{ID: 1, Name: "MacBook Pro", Price: 150000, Stock: 10},
-			{ID: 2, Name: "iPhone 15", Price: 80000, Stock: 0},
+			{ID: 1, Name: "MacBook Pro", Price: decimal.NewFromInt(150000), Stock: 10},
+			{ID: 2, Name: "iPhone 15", Price: decimal.NewFromInt(80000), Stock: 0},
 		},
 	}
 }
