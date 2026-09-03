@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/shopspring/decimal"
+)
 
 type Order struct {
 	ID        int
@@ -14,13 +18,13 @@ type OrderItem struct {
 	OrderID   int
 	ProductID int
 	Quantity  int
-	Price     float64
+	Price     decimal.Decimal
 }
 
 type Product struct {
 	ID    int
 	Name  string
-	Price float64
+	Price decimal.Decimal
 	Stock int
 }
 
