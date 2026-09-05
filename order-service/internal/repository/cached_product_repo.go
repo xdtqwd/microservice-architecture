@@ -39,7 +39,7 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 	var p domain.Product
 	if err := r.cache.Get(ctx, key, &p); err == nil {
 		r.logger.Debug("cache hit", zap.String("key", key))
-	metrics.CacheHits.WithLabelValues("l2").Inc()
+		metrics.CacheHits.WithLabelValues("l2").Inc()
 		return &p, nil
 	}
 
