@@ -65,7 +65,7 @@ func setupRoutes(h *handler.Handler) http.Handler {
 func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	cfg := config.Load()
 
-	pool, err := repository.Connect(ctx, cfg.DatabaseURL)
+	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger)
 	if err != nil {
 		return nil, err
 	}
