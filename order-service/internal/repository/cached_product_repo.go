@@ -67,7 +67,8 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 		return nil, err
 	}
 
-	return val.(*domain.Product), nil
+	cp := *val.(*domain.Product)
+	return &cp, nil
 }
 
 func (r *CachedProductRepo) InvalidateByID(ctx context.Context, id int) error {
