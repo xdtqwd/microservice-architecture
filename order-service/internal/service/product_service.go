@@ -23,7 +23,3 @@ func (s *ProductService) GetProducts(ctx context.Context) ([]domain.Product, err
 func (s *ProductService) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
 	return s.repo.GetProductByID(ctx, id)
 }
-
-func (s *ProductService) InvalidateCache(ctx context.Context, id int) error {
-	return s.repo.InvalidateByID(ctx, id)
-}
