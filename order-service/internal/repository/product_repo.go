@@ -1,6 +1,5 @@
 package repository
 
-
 type ProductRepo struct {
 	db Querier
 }
@@ -8,4 +7,3 @@ type ProductRepo struct {
 func NewProductRepo(db Querier) *ProductRepo {
 	return &ProductRepo{db: db}
 }
-
