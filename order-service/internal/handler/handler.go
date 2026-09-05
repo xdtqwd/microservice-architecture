@@ -15,7 +15,7 @@ import (
 
 type OrderService interface {
 	CreateOrder(ctx context.Context, items []domain.CreateOrderItem) (int, error)
-	GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error)
+	GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error)
 	GetOrderByID(ctx context.Context, id int) (*domain.Order, error)
 	CancelOrder(ctx context.Context, id int) (int, error)
 }
@@ -105,19 +105,29 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	var cursor *domain.OrderCursor
+	if afterID, _ := strconv.Atoi(r.URL.Query().Get("after_id")); afterID > 0 {
+		cursor = &domain.OrderCursor{AfterID: afterID}
+	}
 
-	orders, err := h.orderSvc.GetOrders(r.Context(), limit, offset)
+	orders, nextCursor, err := h.orderSvc.GetOrders(r.Context(), limit, cursor)
 	if err != nil {
 		writeError(w, h.logger, err)
 		return
 	}
-	responses := make([]OrderResponse, len(orders))
+	type response struct {
+		Orders []OrderResponse `json:"orders"`
+		NextAfterID *int `json:"next_after_id,omitempty"`
+	}
+	resp := response{Orders: make([]OrderResponse, len(orders))}
 	for i, o := range orders {
-		responses[i] = orderToResponse(&o)
+		resp.Orders[i] = orderToResponse(&o)
+	}
+	if nextCursor != nil {
+		resp.NextAfterID = &nextCursor.AfterID
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(responses); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		writeError(w, h.logger, err)
 	}
 }
