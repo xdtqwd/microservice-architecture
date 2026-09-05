@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"sync/atomic"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -20,10 +21,15 @@ type ProductStorage interface {
 }
 
 type CachedProductRepo struct {
-	repo   ProductStorage
-	cache  *cache.RedisCache
-	logger *zap.Logger
-	group  singleflight.Group
+	repo    ProductStorage
+	cache   *cache.RedisCache
+	logger  *zap.Logger
+	group   singleflight.Group
+	dbCalls int64
+}
+
+func (r *CachedProductRepo) DBCalls() int64 {
+	return atomic.LoadInt64(&r.dbCalls)
 }
 
 func NewCachedProductRepo(repo ProductStorage, c *cache.RedisCache, logger *zap.Logger) *CachedProductRepo {
@@ -46,6 +52,8 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 	r.logger.Debug("cache miss", zap.String("key", key))
 
 	val, err, _ := r.group.Do(key, func() (interface{}, error) {
+		calls := atomic.AddInt64(&r.dbCalls, 1)
+		r.logger.Info("db call", zap.Int64("total", calls))
 		product, err := r.repo.GetProductByID(ctx, id)
 		if err != nil {
 			return nil, err
