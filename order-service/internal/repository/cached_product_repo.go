@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"sync/atomic"
+	"golang.org/x/sync/singleflight"
 )
 
 const productTTL = 5 * time.Minute
@@ -19,9 +21,15 @@ type ProductStorage interface {
 }
 
 type CachedProductRepo struct {
-	repo   ProductStorage
-	cache  *cache.RedisCache
-	logger *zap.Logger
+	repo    ProductStorage
+	cache   *cache.RedisCache
+	logger  *zap.Logger
+	group   singleflight.Group
+	dbCalls int64
+}
+
+func (r *CachedProductRepo) DBCalls() int64 {
+	return atomic.LoadInt64(&r.dbCalls)
 }
 
 func NewCachedProductRepo(repo ProductStorage, c *cache.RedisCache, logger *zap.Logger) *CachedProductRepo {
@@ -37,20 +45,30 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 
 	var p domain.Product
 	if err := r.cache.Get(ctx, key, &p); err == nil {
-		r.logger.Info("cache hit", zap.String("key", key))
+		r.logger.Debug("cache hit", zap.String("key", key))
 		return &p, nil
 	}
 
-	r.logger.Info("cache miss", zap.String("key", key))
-	product, err := r.repo.GetProductByID(ctx, id)
+	r.logger.Debug("cache miss", zap.String("key", key))
+
+	val, err, _ := r.group.Do(key, func() (interface{}, error) {
+		calls := atomic.AddInt64(&r.dbCalls, 1)
+		r.logger.Info("db call", zap.Int64("total", calls))
+		product, err := r.repo.GetProductByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if err := r.cache.Set(ctx, key, product, productTTL); err != nil {
+			r.logger.Error("cache set error", zap.Error(err))
+		}
+		return product, nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.cache.Set(ctx, key, product, productTTL); err != nil {
-		r.logger.Error("cache set error", zap.Error(err))
-	}
-	return product, nil
+	cp := *val.(*domain.Product)
+	return &cp, nil
 }
 
 func (r *CachedProductRepo) InvalidateByID(ctx context.Context, id int) error {
