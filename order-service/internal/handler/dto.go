@@ -13,16 +13,16 @@ type OrderResponse struct {
 }
 
 type OrderItemResponse struct {
-	ProductID int     `json:"product_id"`
-	Quantity  int     `json:"quantity"`
-	Price     float64 `json:"price"`
+	ProductID int    `json:"product_id"`
+	Quantity  int    `json:"quantity"`
+	Price     string `json:"price"`
 }
 
 type ProductResponse struct {
-	ID    int     `json:"id"`
-	Name  string  `json:"name"`
-	Price float64 `json:"price"`
-	Stock int     `json:"stock"`
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Price string `json:"price"`
+	Stock int    `json:"stock"`
 }
 
 func orderToResponse(o *domain.Order) OrderResponse {
@@ -31,7 +31,7 @@ func orderToResponse(o *domain.Order) OrderResponse {
 		items[i] = OrderItemResponse{
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
-			Price:     item.Price,
+			Price:     item.Price.String(),
 		}
 	}
 	return OrderResponse{
@@ -46,7 +46,7 @@ func productToResponse(p *domain.Product) ProductResponse {
 	return ProductResponse{
 		ID:    p.ID,
 		Name:  p.Name,
-		Price: p.Price,
+		Price: p.Price.String(),
 		Stock: p.Stock,
 	}
 }
