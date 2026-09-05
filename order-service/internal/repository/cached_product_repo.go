@@ -45,9 +45,8 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 	}
 	if !errors.Is(err, cache.ErrCacheMiss) {
 		r.logger.Error("redis error", zap.Error(err))
+		return nil, err
 	}
-
-	r.logger.Debug("cache miss", zap.String("key", key))
 
 	r.logger.Debug("cache miss", zap.String("key", key))
 	metrics.CacheMisses.WithLabelValues("l2").Inc()
