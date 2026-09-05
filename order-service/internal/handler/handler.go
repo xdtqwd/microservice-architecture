@@ -23,7 +23,6 @@ type OrderService interface {
 type ProductService interface {
 	GetProducts(ctx context.Context) ([]domain.Product, error)
 	GetProductByID(ctx context.Context, id int) (*domain.Product, error)
-	InvalidateCache(ctx context.Context, id int) error
 }
 
 type Handler struct {
@@ -156,21 +155,4 @@ func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) InvalidateProductCache(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(mux.Vars(r)["id"])
-	if err != nil {
-		writeError(w, h.logger, domain.ErrProductNotFound)
-		return
-	}
-	if err = h.productSvc.InvalidateCache(r.Context(), id); err != nil {
-		writeError(w, h.logger, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
-		writeError(w, h.logger, err)
-	}
-}
 
-// убедимся что service импортируется
