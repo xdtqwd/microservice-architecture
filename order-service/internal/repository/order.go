@@ -107,12 +107,20 @@ func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, er
 	return &o, nil
 }
 
-func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
-	rows, err := r.pool.Query(ctx,
-		"SELECT id, status, created_at FROM orders ORDER BY id LIMIT $1 OFFSET $2",
-		limit, offset)
+func (r *OrderRepo) GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error) {
+	var rows pgx.Rows
+	var err error
+	if cursor != nil && cursor.AfterID > 0 {
+		rows, err = r.pool.Query(ctx,
+			"SELECT id, status, created_at FROM orders WHERE id < $1 ORDER BY id DESC LIMIT $2",
+			cursor.AfterID, limit)
+	} else {
+		rows, err = r.pool.Query(ctx,
+			"SELECT id, status, created_at FROM orders ORDER BY id DESC LIMIT $1",
+			limit)
+	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
@@ -121,14 +129,18 @@ func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.
 		var o domain.Order
 		err = rows.Scan(&o.ID, &o.Status, &o.CreatedAt)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		orders = append(orders, o)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return orders, nil
+	var nextCursor *domain.OrderCursor
+	if len(orders) == limit {
+		nextCursor = &domain.OrderCursor{AfterID: orders[len(orders)-1].ID}
+	}
+	return orders, nextCursor, nil
 }
 
 func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
