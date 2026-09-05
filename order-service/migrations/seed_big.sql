@@ -4,7 +4,6 @@ SELECT
     (random() * 99000 + 1000)::numeric(10,2),
     (random() * 1000)::int
 FROM generate_series(1, 10000) AS i
-ON CONFLICT DO NOTHING;
 
 INSERT INTO orders (status, created_at)
 SELECT
