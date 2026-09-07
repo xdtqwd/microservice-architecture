@@ -42,11 +42,23 @@ func (m *mockRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Orde
 	if len(m.orders) == 0 {
 		return []domain.Order{}, nil, nil
 	}
-	end := limit
+	start := 0
+	if cursor != nil && cursor.AfterID > 0 {
+		for i, o := range m.orders {
+			if o.ID == cursor.AfterID {
+				start = i + 1
+				break
+			}
+		}
+	}
+	if start >= len(m.orders) {
+		return []domain.Order{}, nil, nil
+	}
+	end := start + limit
 	if end > len(m.orders) {
 		end = len(m.orders)
 	}
-	orders := m.orders[:end]
+	orders := m.orders[start:end]
 	var nextCursor *domain.OrderCursor
 	if len(orders) == limit {
 		nextCursor = &domain.OrderCursor{AfterID: orders[len(orders)-1].ID}

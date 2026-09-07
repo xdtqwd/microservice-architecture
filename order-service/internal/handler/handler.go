@@ -105,8 +105,20 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	// offset больше не поддерживается — возвращаем 400
+	if r.URL.Query().Get("offset") != "" {
+		writeError(w, h.logger, domain.ErrOffsetNotSupported)
+		return
+	}
+
 	var cursor *domain.OrderCursor
-	if afterID, _ := strconv.Atoi(r.URL.Query().Get("after_id")); afterID > 0 {
+	if afterIDStr := r.URL.Query().Get("after_id"); afterIDStr != "" {
+		afterID, err := strconv.Atoi(afterIDStr)
+		if err != nil || afterID <= 0 {
+			writeError(w, h.logger, domain.ErrInvalidCursor)
+			return
+		}
 		cursor = &domain.OrderCursor{AfterID: afterID}
 	}
 

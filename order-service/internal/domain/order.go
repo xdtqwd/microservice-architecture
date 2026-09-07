@@ -30,5 +30,6 @@ type CreateOrderItem struct {
 }
 
 type OrderCursor struct {
-	AfterID int
+	AfterID    int
+	CreatedAt  time.Time
 }

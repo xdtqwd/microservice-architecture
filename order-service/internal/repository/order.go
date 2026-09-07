@@ -138,7 +138,8 @@ func (r *OrderRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Ord
 	}
 	var nextCursor *domain.OrderCursor
 	if len(orders) == limit {
-		nextCursor = &domain.OrderCursor{AfterID: orders[len(orders)-1].ID}
+		last := orders[len(orders)-1]
+		nextCursor = &domain.OrderCursor{AfterID: last.ID, CreatedAt: last.CreatedAt}
 	}
 	return orders, nextCursor, nil
 }
