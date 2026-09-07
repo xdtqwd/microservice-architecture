@@ -146,7 +146,7 @@ func (r *OrderRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Ord
 		ids[i] = o.ID
 	}
 	itemRows, err := r.pool.Query(ctx,
-		"SELECT id, order_id, product_id, quantity, price FROM order_items WHERE order_id = ANY($1)",
+		"SELECT id, order_id, product_id, quantity, price FROM order_items WHERE order_id = ANY($1) ORDER BY id",
 		ids)
 	if err != nil {
 		return nil, nil, err

@@ -18,13 +18,13 @@ type queryTracer struct {
 }
 
 func (t *queryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
-	t.logger.Debug("sql query", zap.String("sql", data.SQL))
+	t.logger.Info("sql query", zap.String("sql", data.SQL))
 	return context.WithValue(ctx, queryStartKey, time.Now())
 }
 
 func (t *queryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
 	start, _ := ctx.Value(queryStartKey).(time.Time)
-	t.logger.Debug("sql query done",
+	t.logger.Info("sql query done",
 		zap.Duration("duration", time.Since(start)),
 		zap.String("err", func() string {
 			if data.Err != nil {
