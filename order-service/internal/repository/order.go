@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"order-service/internal/domain"
+	"github.com/shopspring/decimal"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -41,7 +42,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 	}
 
 	for _, item := range items {
-		var price float64
+		var price decimal.Decimal
 		err = tx.QueryRow(ctx,
 			"SELECT price FROM products WHERE id = $1", item.ProductID).Scan(&price)
 		if err != nil {

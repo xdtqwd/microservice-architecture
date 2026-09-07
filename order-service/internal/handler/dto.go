@@ -31,7 +31,7 @@ func orderToResponse(o *domain.Order) OrderResponse {
 		items[i] = OrderItemResponse{
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
-			Price:     item.Price.String(),
+			Price:     item.Price.StringFixed(2),
 		}
 	}
 	return OrderResponse{
@@ -46,7 +46,7 @@ func productToResponse(p *domain.Product) ProductResponse {
 	return ProductResponse{
 		ID:    p.ID,
 		Name:  p.Name,
-		Price: p.Price.String(),
+		Price: p.Price.StringFixed(2),
 		Stock: p.Stock,
 	}
 }

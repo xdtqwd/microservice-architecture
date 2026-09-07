@@ -26,7 +26,22 @@ func newMockRepo() *mockRepo {
 func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error) {
 	id := m.nextID
 	m.nextID++
-	m.orders = append(m.orders, domain.Order{ID: id, Status: "pending", Items: items})
+	orderItems := make([]domain.OrderItem, len(items))
+	for i, item := range items {
+		price := decimal.NewFromInt(0)
+		for _, p := range m.products {
+			if p.ID == item.ProductID {
+				price = p.Price
+				break
+			}
+		}
+		orderItems[i] = domain.OrderItem{
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+			Price:     price,
+		}
+	}
+	m.orders = append(m.orders, domain.Order{ID: id, Status: "pending", Items: orderItems})
 	return id, nil
 }
 

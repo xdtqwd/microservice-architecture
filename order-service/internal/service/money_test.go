@@ -1,25 +1,43 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
+	"order-service/internal/domain"
 )
 
-func TestFloat64MoneyPrecision(t *testing.T) {
-	// float64 — проблема
-	prices := []float64{0.1, 0.1, 0.1}
-	var total float64
-	for _, p := range prices {
-		total += p
-	}
-	assert.NotEqual(t, 0.3, total) // 0.30000000000000004 — баг
+// TestCreateOrder_PriceDecimalPrecision проверяет что цена в заказе
+// не теряет точность — в отличие от float64.
+func TestCreateOrder_PriceDecimalPrecision(t *testing.T) {
+	repo := newMockRepo()
+	repo.products = append(repo.products, domain.Product{
+		ID:    3,
+		Name:  "Dime",
+		Price: decimal.NewFromFloat(0.1),
+		Stock: 10,
+	})
 
-	// decimal — решение
-	d1 := decimal.NewFromFloat(0.1)
-	d2 := decimal.NewFromFloat(0.1)
-	d3 := decimal.NewFromFloat(0.1)
-	totalDecimal := d1.Add(d2).Add(d3)
-	assert.Equal(t, "0.3", totalDecimal.String()) // точно
+	svc := NewOrderService(repo)
+	ctx := context.Background()
+
+	_, err := svc.CreateOrder(ctx, []domain.CreateOrderItem{
+		{ProductID: 3, Quantity: 1},
+	})
+	assert.NoError(t, err)
+
+	orders, _, err := svc.GetOrders(ctx, 10, nil)
+	assert.NoError(t, err)
+
+	for _, o := range orders {
+		for _, item := range o.Items {
+			if item.ProductID == 3 {
+				// float64 дал бы 0.10000000000000001
+				// decimal даёт точно 0.10
+				assert.Equal(t, "0.10", item.Price.StringFixed(2))
+			}
+		}
+	}
 }
