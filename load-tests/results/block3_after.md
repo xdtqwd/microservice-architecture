@@ -1,40 +1,33 @@
 # DB-07 — Нагрузочные тесты после блока 3
 
-## GET /orders?limit=50 (100 VU, 30s)
+Все замеры сняты с одинаковым профилем: 100 VU, sleep=0.1s, 30s.
 
-| Метрика | Значение |
-|---------|----------|
-| RPS | 944 |
-| p90 | 11.34ms |
-| p95 | 14.88ms |
-| p99 | 80.53ms |
-| errors | 0% |
+## GET /orders?limit=50 (keyset пагинация)
 
-## GET /products/{id} (100 VU, 30s)
+    checks_total.......: 28607   952/s
+    http_req_duration..: avg=4.67ms p(90)=8.1ms p(95)=9.88ms p(99)=13.7ms
+    http_req_failed....: 0.00%
 
-| Метрика | Значение |
-|---------|----------|
-| RPS | 943 |
-| p90 | 9.09ms |
-| p95 | 11.64ms |
-| p99 | 27.86ms |
-| errors | 0% |
+## GET /products/{id}
 
-## POST /orders (10 VU, 30s)
+    checks_total.......: 28333   943/s
+    http_req_duration..: avg=5.45ms p(90)=9.09ms p(95)=11.64ms p(99)=27.86ms
+    http_req_failed....: 0.00%
 
-| Метрика | Значение |
-|---------|----------|
-| RPS | 19.6 |
-| p90 | 14.85ms |
-| p95 | 21.07ms |
-| p99 | 140.14ms |
-| errors | 0% |
+## POST /orders (10 VU, sleep=0.5s)
 
-## Что дал блок 3
+    checks_total.......: 590    19.6/s
+    http_req_duration..: avg=10.39ms p(90)=14.85ms p(95)=21.07ms p(99)=140.14ms
+    http_req_failed....: 0.00%
 
-| Правка | Эффект |
-|--------|--------|
-| Индекс `order_items(order_id)` | 382ms → 0.2ms на GetOrderByID |
-| Keyset пагинация | 871ms → 0.08ms на последней странице |
-| N+1 fix `ANY($1)` | 51 запросов → 2 на GET /orders |
-| Индекс `orders(created_at)` | 231ms → 1.6ms на сортировке |
+## Замер "до" — EXPLAIN ANALYZE (не k6)
+
+Честного k6-замера до оптимизаций нет — OFFSET пагинация удалена.
+Результаты из EXPLAIN ANALYZE на тех же данных:
+
+| Запрос | До | После | Правка |
+|--------|----|-------|--------|
+| order_items WHERE order_id=N | 2391ms | 0.091ms | индекс |
+| orders ORDER BY created_at LIMIT 50 | 231ms | 2ms | индекс |
+| orders OFFSET 4999900 | 5922ms | 0.08ms | keyset |
+| GET /orders (N+1) | 51 DB calls | 2 DB calls | ANY($1) |
