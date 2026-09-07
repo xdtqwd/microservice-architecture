@@ -28,3 +28,8 @@ type CreateOrderItem struct {
 	ProductID int
 	Quantity  int
 }
+
+type OrderCursor struct {
+	AfterID    int
+	CreatedAt  time.Time
+}
