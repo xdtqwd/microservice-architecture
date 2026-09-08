@@ -178,8 +178,20 @@ func (r *OrderRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Ord
 }
 
 func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
-	var cancelledID int
+	var currentStatus string
 	err := r.pool.QueryRow(ctx,
+		"SELECT status FROM orders WHERE id = $1", id).Scan(&currentStatus)
+	if err != nil {
+		return 0, fmt.Errorf("CancelOrder: %w", domain.ErrOrderNotFound)
+	}
+	if !domain.CanTransition(currentStatus, "cancelled") {
+		if currentStatus == "cancelled" {
+			return 0, domain.ErrOrderAlreadyCancelled
+		}
+		return 0, fmt.Errorf("CancelOrder: %w", domain.ErrInvalidStatusTransition)
+	}
+	var cancelledID int
+	err = r.pool.QueryRow(ctx,
 		"UPDATE orders SET status = $1 WHERE id = $2 RETURNING id",
 		"cancelled", id).Scan(&cancelledID)
 	if err != nil {

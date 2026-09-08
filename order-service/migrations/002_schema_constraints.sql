@@ -43,3 +43,8 @@ ALTER TABLE order_items ADD CONSTRAINT order_items_order_id_fkey
 ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_product_id_fkey;
 ALTER TABLE order_items ADD CONSTRAINT order_items_product_id_fkey
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
+
+-- 5. CHECK на статус заказа
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS check_order_status;
+ALTER TABLE orders ADD CONSTRAINT check_order_status
+    CHECK (status IN ('pending', 'paid', 'shipped', 'delivered', 'cancelled'));

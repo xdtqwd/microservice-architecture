@@ -36,3 +36,24 @@ type CreateOrderItem struct {
 type OrderCursor struct {
 	AfterID int
 }
+
+var allowedTransitions = map[string][]string{
+	"pending":  {"paid", "cancelled"},
+	"paid":     {"shipped", "cancelled"},
+	"shipped":  {"delivered"},
+	"delivered": {},
+	"cancelled": {},
+}
+
+func CanTransition(from, to string) bool {
+	allowed, ok := allowedTransitions[from]
+	if !ok {
+		return false
+	}
+	for _, s := range allowed {
+		if s == to {
+			return true
+		}
+	}
+	return false
+}

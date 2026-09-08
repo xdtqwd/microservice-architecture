@@ -72,11 +72,17 @@ func (m *mockRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Orde
 func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	for i, o := range m.orders {
 		if o.ID == id {
+			if !domain.CanTransition(o.Status, "cancelled") {
+				if o.Status == "cancelled" {
+					return 0, domain.ErrOrderAlreadyCancelled
+				}
+				return 0, domain.ErrInvalidStatusTransition
+			}
 			m.orders[i].Status = "cancelled"
 			return id, nil
 		}
 	}
-	return 0, nil
+	return 0, domain.ErrOrderNotFound
 }
 func (m *mockRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
 	return m.products, nil
