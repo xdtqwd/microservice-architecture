@@ -7,7 +7,7 @@ import (
 )
 
 type OrderRepository interface {
-	CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error)
+	CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, error)
 	GetOrderByID(ctx context.Context, id int) (*domain.Order, error)
 	GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error)
 	CancelOrder(ctx context.Context, id int) (int, error)

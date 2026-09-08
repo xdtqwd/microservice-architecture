@@ -26,12 +26,23 @@ type OrderItem struct {
 	Price     float64
 }
 
-func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error) {
+func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, error) {
+	fmt.Println("BEGIN ctx done:", ctx.Err())
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { _ = tx.Rollback(context.Background()) }()
+
+	if idempotencyKey != "" {
+		var existingID int
+		err := r.pool.QueryRow(ctx,
+			"SELECT order_id FROM idempotency_keys WHERE key = $1",
+			idempotencyKey).Scan(&existingID)
+		if err == nil && existingID > 0 {
+			return existingID, nil
+		}
+	}
 
 	var orderID int
 	err = tx.QueryRow(ctx,
@@ -71,6 +82,14 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 	err = tx.Commit(ctx)
 	if err != nil {
 		return 0, err
+	}
+	if idempotencyKey != "" {
+		_, err = r.pool.Exec(context.Background(),
+			"UPDATE idempotency_keys SET order_id = $1 WHERE key = $2",
+			orderID, idempotencyKey)
+		if err != nil {
+			return 0, err
+		}
 	}
 	return orderID, nil
 }

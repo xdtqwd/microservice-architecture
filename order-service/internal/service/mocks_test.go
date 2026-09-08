@@ -23,7 +23,7 @@ func newMockRepo() *mockRepo {
 	}
 }
 
-func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error) {
+func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, error) {
 	id := m.nextID
 	m.nextID++
 	orderItems := make([]domain.OrderItem, len(items))

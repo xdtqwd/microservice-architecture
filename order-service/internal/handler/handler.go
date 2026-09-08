@@ -14,7 +14,7 @@ import (
 )
 
 type OrderService interface {
-	CreateOrder(ctx context.Context, items []domain.CreateOrderItem) (int, error)
+	CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, error)
 	GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error)
 	GetOrderByID(ctx context.Context, id int) (*domain.Order, error)
 	CancelOrder(ctx context.Context, id int) (int, error)
@@ -91,7 +91,8 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	orderID, err := h.orderSvc.CreateOrder(r.Context(), items)
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+	orderID, err := h.orderSvc.CreateOrder(r.Context(), items, idempotencyKey)
 	if err != nil {
 		writeError(w, h.logger, err)
 		return

@@ -58,7 +58,7 @@ func TestGetOrders_LimitCappedToMax(t *testing.T) {
 
 	items := []domain.CreateOrderItem{{ProductID: 1, Quantity: 1}}
 	for i := 0; i < 5; i++ {
-		_, err := svc.CreateOrder(ctx, items)
+		_, err := svc.CreateOrder(ctx, items, "")
 		assert.NoError(t, err)
 	}
 

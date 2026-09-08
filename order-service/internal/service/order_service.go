@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"order-service/internal/domain"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -12,14 +13,28 @@ const (
 )
 
 type OrderService struct {
-	repo OrderRepository
+	repo  OrderRepository
+	group singleflight.Group
 }
 
 func NewOrderService(repo OrderRepository) *OrderService {
 	return &OrderService{repo: repo}
 }
 
-func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem) (int, error) {
+func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, error) {
+	if idempotencyKey != "" {
+		val, err, _ := s.group.Do(idempotencyKey, func() (interface{}, error) {
+			return s.createOrder(context.Background(), items, idempotencyKey)
+		})
+		if err != nil {
+			return 0, err
+		}
+		return val.(int), nil
+	}
+	return s.createOrder(ctx, items, "")
+}
+
+func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, error) {
 	if len(items) == 0 {
 		return 0, errors.New("order must have at least one item")
 	}
@@ -42,7 +57,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrd
 		})
 	}
 
-	return s.repo.CreateOrder(ctx, orderItems)
+	return s.repo.CreateOrder(ctx, orderItems, idempotencyKey)
 }
 
 func (s *OrderService) GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error) {

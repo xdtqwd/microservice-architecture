@@ -19,3 +19,9 @@ CREATE TABLE IF NOT EXISTS order_items (
     price       NUMERIC NOT NULL CHECK (price >= 0)
 );
 
+
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    key         TEXT PRIMARY KEY,
+    order_id    INT NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);

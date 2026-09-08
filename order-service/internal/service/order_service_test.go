@@ -18,7 +18,7 @@ func TestCreateOrder_Success(t *testing.T) {
 		{ProductID: 1, Quantity: 2},
 	}
 
-	id, err := svc.CreateOrder(ctx, items)
+	id, err := svc.CreateOrder(ctx, items, "")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, id)
 }
@@ -31,7 +31,7 @@ func TestCancelOrder_Success(t *testing.T) {
 	items := []domain.CreateOrderItem{
 		{ProductID: 1, Quantity: 2},
 	}
-	id, _ := svc.CreateOrder(ctx, items)
+	id, _ := svc.CreateOrder(ctx, items, "")
 
 	cancelledID, err := svc.CancelOrder(ctx, id)
 	assert.NoError(t, err)
@@ -51,10 +51,10 @@ func TestGetOrders_ReturnsAll(t *testing.T) {
 		{ProductID: 1, Quantity: 2},
 	}
 
-	_, err := svc.CreateOrder(ctx, items)
+	_, err := svc.CreateOrder(ctx, items, "")
 	assert.NoError(t, err)
 
-	_, err = svc.CreateOrder(ctx, items)
+	_, err = svc.CreateOrder(ctx, items, "")
 	assert.NoError(t, err)
 
 	orders, _, err := svc.GetOrders(ctx, 10, nil)
@@ -70,7 +70,7 @@ func TestCreateOrder_InvalidQuantity(t *testing.T) {
 		{ProductID: 1, Quantity: -1},
 	}
 
-	_, err := svc.CreateOrder(ctx, items)
+	_, err := svc.CreateOrder(ctx, items, "")
 	assert.Error(t, err)
 }
 func TestCreateOrder_EmptyItems(t *testing.T) {
@@ -78,7 +78,7 @@ func TestCreateOrder_EmptyItems(t *testing.T) {
 	repo := newMockRepo()
 	svc := NewOrderService(repo)
 
-	_, err := svc.CreateOrder(ctx, []domain.CreateOrderItem{})
+	_, err := svc.CreateOrder(ctx, []domain.CreateOrderItem{}, "")
 	assert.Error(t, err)
 }
 
@@ -100,7 +100,7 @@ func TestCancelOrder_AlreadyCancelled(t *testing.T) {
 	items := []domain.CreateOrderItem{
 		{ProductID: 1, Quantity: 2},
 	}
-	id, _ := svc.CreateOrder(ctx, items)
+	id, _ := svc.CreateOrder(ctx, items, "")
 
 	_, err := svc.CancelOrder(ctx, id)
 	assert.NoError(t, err)
@@ -116,7 +116,7 @@ func TestGetOrders_Pagination(t *testing.T) {
 
 	items := []domain.CreateOrderItem{{ProductID: 1, Quantity: 1}}
 	for i := 0; i < 5; i++ {
-		_, err := svc.CreateOrder(ctx, items)
+		_, err := svc.CreateOrder(ctx, items, "")
 		assert.NoError(t, err)
 	}
 
