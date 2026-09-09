@@ -1,5 +1,5 @@
 FROM golang:1.26
 WORKDIR /app
 COPY . .
-RUN go build -o server ./cmd
+RUN go build -mod=vendor -o server ./cmd
 CMD ["./server"]
