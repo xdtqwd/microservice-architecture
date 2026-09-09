@@ -77,6 +77,7 @@ func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrd
 	})
 	if err == nil && !exists && s.producer != nil {
 		// СЦЕНАРИЙ 1: раскомментировать чтобы воспроизвести
+		// СЦЕНАРИЙ 1: раскомментировать чтобы воспроизвести
 		// panic("process killed after commit, before kafka send")
 		// НАИВНЫЙ ВАРИАНТ: отправка после коммита
 		// Если процесс упадёт здесь — заказ есть в БД, события нет
