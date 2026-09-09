@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"go.uber.org/zap"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,7 +26,7 @@ func TestCancelOrder_InvalidTransitions(t *testing.T) {
 			repo.orders = []domain.Order{
 				{ID: 1, Status: tt.status},
 			}
-			svc := NewOrderService(repo, nil)
+			svc := NewOrderService(repo, nil, zap.NewNop())
 			_, err := svc.CancelOrder(context.Background(), 1)
 			assert.ErrorIs(t, err, tt.expectErr)
 		})
@@ -47,7 +48,7 @@ func TestCancelOrder_ValidTransitions(t *testing.T) {
 			repo.orders = []domain.Order{
 				{ID: 1, Status: tt.status},
 			}
-			svc := NewOrderService(repo, nil)
+			svc := NewOrderService(repo, nil, zap.NewNop())
 			_, err := svc.CancelOrder(context.Background(), 1)
 			assert.NoError(t, err)
 		})

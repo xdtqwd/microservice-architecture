@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"order-service/internal/domain"
+	"go.uber.org/zap"
+	"order-service/internal/retry"
 	"order-service/internal/txm"
 	"golang.org/x/sync/singleflight"
 )
@@ -14,13 +16,14 @@ const (
 )
 
 type OrderService struct {
-	repo  OrderRepository
-	txm   *txm.TxManager
-	group singleflight.Group
+	repo   OrderRepository
+	txm    *txm.TxManager
+	logger *zap.Logger
+	group  singleflight.Group
 }
 
-func NewOrderService(repo OrderRepository, txm *txm.TxManager) *OrderService {
-	return &OrderService{repo: repo, txm: txm}
+func NewOrderService(repo OrderRepository, txm *txm.TxManager, logger *zap.Logger) *OrderService {
+	return &OrderService{repo: repo, txm: txm, logger: logger}
 }
 
 func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
@@ -62,7 +65,15 @@ func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrd
 		})
 	}
 
-	return s.repo.CreateOrder(ctx, orderItems, idempotencyKey)
+	var orderID int
+	var exists bool
+	retries := 0
+	err := retry.Do(ctx, s.logger, &retries, func(ctx context.Context) error {
+		var e error
+		orderID, exists, e = s.repo.CreateOrder(ctx, orderItems, idempotencyKey)
+		return e
+	})
+	return orderID, exists, err
 }
 
 func (s *OrderService) GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error) {

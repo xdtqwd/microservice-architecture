@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"go.uber.org/zap"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,7 +14,7 @@ func TestCreateOrder_Success(t *testing.T) {
 
 	ctx := context.Background()
 	repo := newMockRepo()
-	svc := NewOrderService(repo, nil)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 
 	items := []domain.CreateOrderItem{
 		{ProductID: 1, Quantity: 2},
@@ -27,7 +28,7 @@ func TestCreateOrder_Success(t *testing.T) {
 func TestCancelOrder_Success(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	svc := NewOrderService(repo, nil)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 
 	items := []domain.CreateOrderItem{
 		{ProductID: 1, Quantity: 2},
@@ -46,7 +47,7 @@ func TestCancelOrder_Success(t *testing.T) {
 func TestGetOrders_ReturnsAll(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	svc := NewOrderService(repo, nil)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 
 	items := []domain.CreateOrderItem{
 		{ProductID: 1, Quantity: 2},
@@ -65,7 +66,7 @@ func TestGetOrders_ReturnsAll(t *testing.T) {
 func TestCreateOrder_InvalidQuantity(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	svc := NewOrderService(repo, nil)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 
 	items := []domain.CreateOrderItem{
 		{ProductID: 1, Quantity: -1},
@@ -77,7 +78,7 @@ func TestCreateOrder_InvalidQuantity(t *testing.T) {
 func TestCreateOrder_EmptyItems(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	svc := NewOrderService(repo, nil)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 
 	_, _, err := svc.CreateOrder(ctx, []domain.CreateOrderItem{}, "")
 	assert.Error(t, err)
@@ -86,7 +87,7 @@ func TestCreateOrder_EmptyItems(t *testing.T) {
 func TestGetOrderByID_NotFound(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	svc := NewOrderService(repo, nil)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 
 	order, err := svc.GetOrderByID(ctx, 999)
 	assert.ErrorIs(t, err, domain.ErrOrderNotFound)
@@ -96,7 +97,7 @@ func TestGetOrderByID_NotFound(t *testing.T) {
 func TestCancelOrder_AlreadyCancelled(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	svc := NewOrderService(repo, nil)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 
 	items := []domain.CreateOrderItem{
 		{ProductID: 1, Quantity: 2},
@@ -113,7 +114,7 @@ func TestCancelOrder_AlreadyCancelled(t *testing.T) {
 func TestGetOrders_Pagination(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	svc := NewOrderService(repo, nil)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 
 	items := []domain.CreateOrderItem{{ProductID: 1, Quantity: 1}}
 	for i := 0; i < 5; i++ {
@@ -146,7 +147,7 @@ func TestCreateOrder_IdempotencyParallel(t *testing.T) {
 		Price: decimal.NewFromFloat(10.0),
 		Stock: 100,
 	})
-	svc := NewOrderService(repo, nil)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 	ctx := context.Background()
 
 	items := []domain.CreateOrderItem{{ProductID: 1, Quantity: 1}}

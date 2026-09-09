@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"go.uber.org/zap"
 	"testing"
 
 	"github.com/shopspring/decimal"
@@ -20,7 +21,7 @@ func TestCreateOrder_PriceDecimalPrecision(t *testing.T) {
 		Stock: 10,
 	})
 
-	svc := NewOrderService(repo, nil)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 	ctx := context.Background()
 
 	_, _, err := svc.CreateOrder(ctx, []domain.CreateOrderItem{

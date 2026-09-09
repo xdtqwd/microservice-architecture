@@ -41,7 +41,7 @@ func newServices(
 	logger *zap.Logger,
 ) (*service.OrderService, *service.ProductService) {
 	txManager := txm.New(pool)
-	return service.NewOrderService(orderRepo, txManager),
+	return service.NewOrderService(orderRepo, txManager, logger),
 		service.NewProductService(productRepo, logger)
 }
 
