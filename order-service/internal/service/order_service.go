@@ -21,22 +21,25 @@ func NewOrderService(repo OrderRepository) *OrderService {
 	return &OrderService{repo: repo}
 }
 
-func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, error) {
+func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
 	if idempotencyKey != "" {
+		type result struct{ id int; exists bool }
 		val, err, _ := s.group.Do(idempotencyKey, func() (interface{}, error) {
-			return s.createOrder(context.Background(), items, idempotencyKey)
+			id, exists, err := s.createOrder(context.Background(), items, idempotencyKey)
+			return result{id, exists}, err
 		})
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
-		return val.(int), nil
+		r := val.(result)
+		return r.id, r.exists, nil
 	}
 	return s.createOrder(ctx, items, "")
 }
 
-func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, error) {
+func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
 	if len(items) == 0 {
-		return 0, errors.New("order must have at least one item")
+		return 0, false, errors.New("order must have at least one item")
 	}
 
 	seen := make(map[int]bool)
@@ -44,10 +47,10 @@ func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrd
 
 	for _, item := range items {
 		if item.Quantity <= 0 {
-			return 0, errors.New("quantity must be greater than 0")
+			return 0, false, errors.New("quantity must be greater than 0")
 		}
 		if seen[item.ProductID] {
-			return 0, errors.New("duplicate product_id")
+			return 0, false, errors.New("duplicate product_id")
 		}
 		seen[item.ProductID] = true
 

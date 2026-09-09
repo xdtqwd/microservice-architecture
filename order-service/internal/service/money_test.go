@@ -23,7 +23,7 @@ func TestCreateOrder_PriceDecimalPrecision(t *testing.T) {
 	svc := NewOrderService(repo)
 	ctx := context.Background()
 
-	_, err := svc.CreateOrder(ctx, []domain.CreateOrderItem{
+	_, _, err := svc.CreateOrder(ctx, []domain.CreateOrderItem{
 		{ProductID: 3, Quantity: 1},
 	}, "")
 	assert.NoError(t, err)

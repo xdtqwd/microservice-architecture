@@ -4,17 +4,21 @@ import (
 	"context"
 	"fmt"
 	"order-service/internal/domain"
-	"github.com/shopspring/decimal"
+	"sync"
 
+	"github.com/shopspring/decimal"
 )
 
 type mockRepo struct {
-	orders   []domain.Order
-	products []domain.Product
-	nextID   int
+	orders          []domain.Order
+	products        []domain.Product
+	nextID          int
+	idempotencyKeys map[string]int
+	mu              sync.Mutex
 }
+
 func newMockRepo() *mockRepo {
-	return &mockRepo{
+	return &mockRepo{idempotencyKeys: make(map[string]int),
 		nextID: 1,
 		products: []domain.Product{ // ✅
 			{ID: 1, Name: "MacBook Pro", Price: decimal.NewFromInt(150000), Stock: 10},
@@ -23,7 +27,14 @@ func newMockRepo() *mockRepo {
 	}
 }
 
-func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, error) {
+func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if idempotencyKey != "" {
+		if id, ok := m.idempotencyKeys[idempotencyKey]; ok {
+			return id, true, nil
+		}
+	}
 	id := m.nextID
 	m.nextID++
 	orderItems := make([]domain.OrderItem, len(items))
@@ -42,7 +53,10 @@ func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, id
 		}
 	}
 	m.orders = append(m.orders, domain.Order{ID: id, Status: "pending", Items: orderItems})
-	return id, nil
+	if idempotencyKey != "" {
+		m.idempotencyKeys[idempotencyKey] = id
+	}
+	return id, false, nil
 }
 
 func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
