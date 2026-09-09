@@ -8,6 +8,7 @@ import (
 	"order-service/internal/config"
 	"order-service/internal/handler"
 	"order-service/internal/repository"
+	"order-service/internal/txm"
 	"order-service/internal/service"
 	"os"
 	"os/signal"
@@ -36,9 +37,11 @@ func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger
 func newServices(
 	orderRepo *repository.OrderRepo,
 	productRepo repository.ProductStorage,
+	pool *pgxpool.Pool,
 	logger *zap.Logger,
 ) (*service.OrderService, *service.ProductService) {
-	return service.NewOrderService(orderRepo),
+	txManager := txm.New(pool)
+	return service.NewOrderService(orderRepo, txManager),
 		service.NewProductService(productRepo, logger)
 }
 
@@ -77,7 +80,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	logger.Info("Redis connected!")
 
 	orderRepo, productRepo := newRepositories(pool, redisCache, logger)
-	orderSvc, productSvc := newServices(orderRepo, productRepo, logger)
+	orderSvc, productSvc := newServices(orderRepo, productRepo, pool, logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
 	return &App{

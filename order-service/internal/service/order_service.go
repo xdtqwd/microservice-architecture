@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"order-service/internal/domain"
+	"order-service/internal/txm"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -14,11 +15,12 @@ const (
 
 type OrderService struct {
 	repo  OrderRepository
+	txm   *txm.TxManager
 	group singleflight.Group
 }
 
-func NewOrderService(repo OrderRepository) *OrderService {
-	return &OrderService{repo: repo}
+func NewOrderService(repo OrderRepository, txm *txm.TxManager) *OrderService {
+	return &OrderService{repo: repo, txm: txm}
 }
 
 func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {

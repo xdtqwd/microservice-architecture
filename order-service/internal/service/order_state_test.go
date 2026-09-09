@@ -25,7 +25,7 @@ func TestCancelOrder_InvalidTransitions(t *testing.T) {
 			repo.orders = []domain.Order{
 				{ID: 1, Status: tt.status},
 			}
-			svc := NewOrderService(repo)
+			svc := NewOrderService(repo, nil)
 			_, err := svc.CancelOrder(context.Background(), 1)
 			assert.ErrorIs(t, err, tt.expectErr)
 		})
@@ -47,7 +47,7 @@ func TestCancelOrder_ValidTransitions(t *testing.T) {
 			repo.orders = []domain.Order{
 				{ID: 1, Status: tt.status},
 			}
-			svc := NewOrderService(repo)
+			svc := NewOrderService(repo, nil)
 			_, err := svc.CancelOrder(context.Background(), 1)
 			assert.NoError(t, err)
 		})

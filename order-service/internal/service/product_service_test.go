@@ -54,7 +54,7 @@ func TestGetProducts(t *testing.T) {
 func TestGetOrders_LimitCappedToMax(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	svc := NewOrderService(repo)
+	svc := NewOrderService(repo, nil)
 
 	items := []domain.CreateOrderItem{{ProductID: 1, Quantity: 1}}
 	for i := 0; i < 5; i++ {

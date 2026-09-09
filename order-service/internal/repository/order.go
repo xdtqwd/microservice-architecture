@@ -27,15 +27,7 @@ type OrderItem struct {
 }
 
 func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, bool, error) {
-	fmt.Println("BEGIN ctx done:", ctx.Err())
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return 0, false, err
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-
 	if idempotencyKey != "" {
-		// вставляем заглушку — если ключ уже есть, читаем order_id
 		_, err := r.pool.Exec(context.Background(),
 			"INSERT INTO idempotency_keys (key, order_id) VALUES ($1, 0) ON CONFLICT (key) DO NOTHING",
 			idempotencyKey)
@@ -51,8 +43,10 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 		}
 	}
 
+	q := r.querier(ctx)
+
 	var orderID int
-	err = tx.QueryRow(ctx,
+	err := q.QueryRow(ctx,
 		"INSERT INTO orders (status) VALUES ('pending') RETURNING id").
 		Scan(&orderID)
 	if err != nil {
@@ -61,13 +55,13 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 
 	for _, item := range items {
 		var price decimal.Decimal
-		err = tx.QueryRow(ctx,
+		err = q.QueryRow(ctx,
 			"SELECT price FROM products WHERE id = $1", item.ProductID).Scan(&price)
 		if err != nil {
-				return 0, false, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
+			return 0, false, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
 		}
 
-		tag, err := tx.Exec(ctx,
+		tag, err := q.Exec(ctx,
 			"UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1",
 			item.Quantity, item.ProductID)
 		if err != nil {
@@ -77,7 +71,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 			return 0, false, fmt.Errorf("CreateOrder: %w", domain.ErrInsufficientStock)
 		}
 
-		_, err = tx.Exec(ctx,
+		_, err = q.Exec(ctx,
 			`INSERT INTO order_items (order_id, product_id, quantity, price)
              VALUES ($1, $2, $3, $4)`,
 			orderID, item.ProductID, item.Quantity, price)
@@ -86,10 +80,6 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 		}
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
-		return 0, false, err
-	}
 	if idempotencyKey != "" {
 		_, err = r.pool.Exec(context.Background(),
 			"UPDATE idempotency_keys SET order_id = $1 WHERE key = $2",
