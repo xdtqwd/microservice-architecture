@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
@@ -62,6 +63,7 @@ func setupRoutes(h *handler.Handler) http.Handler {
 	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
 	r.HandleFunc("/products/{id}/cache", h.InvalidateProductCache).Methods("DELETE")
+	r.Handle("/metrics", promhttp.Handler())
 	return r
 }
 
