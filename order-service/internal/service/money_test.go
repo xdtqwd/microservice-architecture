@@ -21,7 +21,7 @@ func TestCreateOrder_PriceDecimalPrecision(t *testing.T) {
 		Stock: 10,
 	})
 
-	svc := NewOrderService(repo, nil, zap.NewNop())
+	svc := NewOrderService(repo, nil, zap.NewNop(), nil)
 	ctx := context.Background()
 
 	_, _, err := svc.CreateOrder(ctx, []domain.CreateOrderItem{

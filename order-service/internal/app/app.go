@@ -7,6 +7,7 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
+	"order-service/internal/kafka"
 	"order-service/internal/repository"
 	"order-service/internal/txm"
 	"order-service/internal/service"
@@ -42,7 +43,8 @@ func newServices(
 	logger *zap.Logger,
 ) (*service.OrderService, *service.ProductService) {
 	txManager := txm.New(pool)
-	return service.NewOrderService(orderRepo, txManager, logger),
+	producer := kafka.NewProducer([]string{"kafka:9092"})
+	return service.NewOrderService(orderRepo, txManager, logger, producer),
 		service.NewProductService(productRepo, logger)
 }
 

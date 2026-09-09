@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"order-service/internal/domain"
+	"order-service/internal/kafka"
 	"go.uber.org/zap"
 	"order-service/internal/retry"
 	"order-service/internal/txm"
@@ -16,14 +17,15 @@ const (
 )
 
 type OrderService struct {
-	repo   OrderRepository
-	txm    *txm.TxManager
-	logger *zap.Logger
-	group  singleflight.Group
+	repo     OrderRepository
+	txm      *txm.TxManager
+	logger   *zap.Logger
+	producer *kafka.Producer
+	group    singleflight.Group
 }
 
-func NewOrderService(repo OrderRepository, txm *txm.TxManager, logger *zap.Logger) *OrderService {
-	return &OrderService{repo: repo, txm: txm, logger: logger}
+func NewOrderService(repo OrderRepository, txm *txm.TxManager, logger *zap.Logger, producer *kafka.Producer) *OrderService {
+	return &OrderService{repo: repo, txm: txm, logger: logger, producer: producer}
 }
 
 func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
@@ -73,6 +75,15 @@ func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrd
 		orderID, exists, e = s.repo.CreateOrder(ctx, orderItems, idempotencyKey)
 		return e
 	})
+	if err == nil && !exists && s.producer != nil {
+		// СЦЕНАРИЙ 1: раскомментировать чтобы воспроизвести
+		// panic("process killed after commit, before kafka send")
+		// НАИВНЫЙ ВАРИАНТ: отправка после коммита
+		// Если процесс упадёт здесь — заказ есть в БД, события нет
+		if kafkaErr := s.producer.SendOrderCreated(ctx, orderID); kafkaErr != nil {
+			s.logger.Error("failed to send order_created event", zap.Int("order_id", orderID), zap.Error(kafkaErr))
+		}
+	}
 	return orderID, exists, err
 }
 
