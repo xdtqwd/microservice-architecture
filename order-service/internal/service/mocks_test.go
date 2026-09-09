@@ -4,29 +4,59 @@ import (
 	"context"
 	"fmt"
 	"order-service/internal/domain"
+	"sync"
 
+	"github.com/shopspring/decimal"
 )
 
 type mockRepo struct {
-	orders   []domain.Order
-	products []domain.Product
-	nextID   int
+	orders          []domain.Order
+	products        []domain.Product
+	nextID          int
+	idempotencyKeys map[string]int
+	mu              sync.Mutex
 }
+
 func newMockRepo() *mockRepo {
-	return &mockRepo{
+	return &mockRepo{idempotencyKeys: make(map[string]int),
 		nextID: 1,
 		products: []domain.Product{ // ✅
-			{ID: 1, Name: "MacBook Pro", Price: 150000, Stock: 10},
-			{ID: 2, Name: "iPhone 15", Price: 80000, Stock: 0},
+			{ID: 1, Name: "MacBook Pro", Price: decimal.NewFromInt(150000), Stock: 10},
+			{ID: 2, Name: "iPhone 15", Price: decimal.NewFromInt(80000), Stock: 0},
 		},
 	}
 }
 
-func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error) {
+func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if idempotencyKey != "" {
+		if id, ok := m.idempotencyKeys[idempotencyKey]; ok {
+			return id, true, nil
+		}
+	}
 	id := m.nextID
 	m.nextID++
-	m.orders = append(m.orders, domain.Order{ID: id, Status: "pending", Items: items})
-	return id, nil
+	orderItems := make([]domain.OrderItem, len(items))
+	for i, item := range items {
+		price := decimal.NewFromInt(0)
+		for _, p := range m.products {
+			if p.ID == item.ProductID {
+				price = p.Price
+				break
+			}
+		}
+		orderItems[i] = domain.OrderItem{
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+			Price:     price,
+		}
+	}
+	m.orders = append(m.orders, domain.Order{ID: id, Status: "pending", Items: orderItems})
+	if idempotencyKey != "" {
+		m.idempotencyKeys[idempotencyKey] = id
+	}
+	return id, false, nil
 }
 
 func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
@@ -38,24 +68,35 @@ func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, err
 	return nil, fmt.Errorf("GetOrderByID: %w", domain.ErrOrderNotFound)
 }
 
-func (m *mockRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
-	if offset >= len(m.orders) {
-		return []domain.Order{}, nil
+func (m *mockRepo) GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error) {
+	if len(m.orders) == 0 {
+		return []domain.Order{}, nil, nil
 	}
-	end := offset + limit
+	end := limit
 	if end > len(m.orders) {
 		end = len(m.orders)
 	}
-	return m.orders[offset:end], nil
+	orders := m.orders[:end]
+	var nextCursor *domain.OrderCursor
+	if len(orders) == limit {
+		nextCursor = &domain.OrderCursor{AfterID: orders[len(orders)-1].ID}
+	}
+	return orders, nextCursor, nil
 }
 func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	for i, o := range m.orders {
 		if o.ID == id {
+			if !domain.CanTransition(o.Status, "cancelled") {
+				if o.Status == "cancelled" {
+					return 0, domain.ErrOrderAlreadyCancelled
+				}
+				return 0, domain.ErrInvalidStatusTransition
+			}
 			m.orders[i].Status = "cancelled"
 			return id, nil
 		}
 	}
-	return 0, nil
+	return 0, domain.ErrOrderNotFound
 }
 func (m *mockRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
 	return m.products, nil
