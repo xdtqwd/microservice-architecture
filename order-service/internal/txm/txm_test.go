@@ -21,6 +21,9 @@ func setupPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Skip("no database available:", err)
 	}
+	if err := pool.Ping(context.Background()); err != nil {
+		t.Skip("no database available:", err)
+	}
 	return pool
 }
 
