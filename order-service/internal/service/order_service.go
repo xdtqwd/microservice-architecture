@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"order-service/internal/domain"
+	"go.uber.org/zap"
+	"order-service/internal/retry"
+	"order-service/internal/txm"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -12,16 +16,35 @@ const (
 )
 
 type OrderService struct {
-	repo OrderRepository
+	repo   OrderRepository
+	txm    *txm.TxManager
+	logger *zap.Logger
+	group  singleflight.Group
 }
 
-func NewOrderService(repo OrderRepository) *OrderService {
-	return &OrderService{repo: repo}
+func NewOrderService(repo OrderRepository, txm *txm.TxManager, logger *zap.Logger) *OrderService {
+	return &OrderService{repo: repo, txm: txm, logger: logger}
 }
 
-func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem) (int, error) {
+func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
+	if idempotencyKey != "" {
+		type result struct{ id int; exists bool }
+		val, err, _ := s.group.Do(idempotencyKey, func() (interface{}, error) {
+			id, exists, err := s.createOrder(context.Background(), items, idempotencyKey)
+			return result{id, exists}, err
+		})
+		if err != nil {
+			return 0, false, err
+		}
+		r := val.(result)
+		return r.id, r.exists, nil
+	}
+	return s.createOrder(ctx, items, "")
+}
+
+func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
 	if len(items) == 0 {
-		return 0, errors.New("order must have at least one item")
+		return 0, false, errors.New("order must have at least one item")
 	}
 
 	seen := make(map[int]bool)
@@ -29,10 +52,10 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrd
 
 	for _, item := range items {
 		if item.Quantity <= 0 {
-			return 0, errors.New("quantity must be greater than 0")
+			return 0, false, errors.New("quantity must be greater than 0")
 		}
 		if seen[item.ProductID] {
-			return 0, errors.New("duplicate product_id")
+			return 0, false, errors.New("duplicate product_id")
 		}
 		seen[item.ProductID] = true
 
@@ -42,20 +65,25 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrd
 		})
 	}
 
-	return s.repo.CreateOrder(ctx, orderItems)
+	var orderID int
+	var exists bool
+	retries := 0
+	err := retry.Do(ctx, s.logger, &retries, func(ctx context.Context) error {
+		var e error
+		orderID, exists, e = s.repo.CreateOrder(ctx, orderItems, idempotencyKey)
+		return e
+	})
+	return orderID, exists, err
 }
 
-func (s *OrderService) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
+func (s *OrderService) GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error) {
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 	if limit > maxLimit {
 		limit = maxLimit
 	}
-	if offset < 0 {
-		offset = 0
-	}
-	return s.repo.GetOrders(ctx, limit, offset)
+	return s.repo.GetOrders(ctx, limit, cursor)
 }
 
 func (s *OrderService) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
