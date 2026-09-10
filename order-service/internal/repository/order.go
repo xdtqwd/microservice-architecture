@@ -178,9 +178,16 @@ func (r *OrderRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Ord
 }
 
 func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+
+	// проверяем статус внутри транзакции с блокировкой строки
 	var currentStatus string
-	err := r.pool.QueryRow(ctx,
-		"SELECT status FROM orders WHERE id = $1", id).Scan(&currentStatus)
+	err = tx.QueryRow(ctx,
+		"SELECT status FROM orders WHERE id = $1 FOR UPDATE", id).Scan(&currentStatus)
 	if err != nil {
 		return 0, fmt.Errorf("CancelOrder: %w", domain.ErrOrderNotFound)
 	}
@@ -190,12 +197,43 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 		}
 		return 0, fmt.Errorf("CancelOrder: %w", domain.ErrInvalidStatusTransition)
 	}
+
+	// меняем статус
 	var cancelledID int
-	err = r.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		"UPDATE orders SET status = $1 WHERE id = $2 RETURNING id",
 		"cancelled", id).Scan(&cancelledID)
 	if err != nil {
 		return 0, err
 	}
+
+	// возвращаем stock по всем позициям заказа
+	_, err = tx.Exec(ctx, `
+		UPDATE products p
+		SET stock = stock + oi.quantity
+		FROM order_items oi
+		WHERE oi.order_id = $1 AND oi.product_id = p.id`,
+		id)
+	if err != nil {
+		return 0, err
+	}
+
+	if err = tx.Commit(context.Background()); err != nil {
+		return 0, err
+	}
+
+	// инвалидируем кеш товаров
+	if r.invalidator != nil {
+		rows, _ := r.pool.Query(context.Background(),
+			"SELECT product_id FROM order_items WHERE order_id = $1", id)
+		defer rows.Close()
+		for rows.Next() {
+			var productID int
+			if err := rows.Scan(&productID); err == nil {
+				_ = r.invalidator.InvalidateByID(context.Background(), productID)
+			}
+		}
+	}
+
 	return cancelledID, nil
 }
