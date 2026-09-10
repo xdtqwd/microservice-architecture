@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"order-service/internal/domain"
 	"github.com/shopspring/decimal"
 	"time"
@@ -40,6 +41,10 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 	if err != nil {
 		return 0, err
 	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].ProductID < items[j].ProductID
+	})
 
 	for _, item := range items {
 		var price decimal.Decimal
