@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"order-service/internal/metrics"
 )
 
 const productTTL = 5 * time.Minute
@@ -37,11 +38,13 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 
 	var p domain.Product
 	if err := r.cache.Get(ctx, key, &p); err == nil {
-		r.logger.Info("cache hit", zap.String("key", key))
+		r.logger.Debug("cache hit", zap.String("key", key))
+		metrics.CacheHits.WithLabelValues("l2").Inc()
 		return &p, nil
 	}
 
-	r.logger.Info("cache miss", zap.String("key", key))
+	r.logger.Debug("cache miss", zap.String("key", key))
+	metrics.CacheMisses.WithLabelValues("l2").Inc()
 	product, err := r.repo.GetProductByID(ctx, id)
 	if err != nil {
 		return nil, err

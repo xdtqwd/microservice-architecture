@@ -7,6 +7,7 @@ import (
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2/expirable"
+	"order-service/internal/metrics"
 )
 
 const (
@@ -36,6 +37,7 @@ func (r *L1ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Pro
 	key := productKey(id)
 
 	if p, ok := r.cache.Get(key); ok {
+		metrics.CacheHits.WithLabelValues("l1").Inc()
 		copy := p
 		return &copy, nil
 	}
@@ -45,6 +47,7 @@ func (r *L1ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Pro
 		return nil, err
 	}
 
+	metrics.CacheMisses.WithLabelValues("l1").Inc()
 	r.cache.Add(key, *p)
 	return p, nil
 }
