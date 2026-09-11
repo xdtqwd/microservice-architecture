@@ -32,7 +32,7 @@ func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger
 	productRepo := repository.NewProductRepo(pool)
 	cachedProductRepo := repository.NewCachedProductRepo(productRepo, c, logger)
 	l1ProductRepo := repository.NewL1ProductRepo(cachedProductRepo)
-	return repository.NewOrderRepo(pool, cachedProductRepo), l1ProductRepo
+	return repository.NewOrderRepo(pool, l1ProductRepo), l1ProductRepo
 }
 
 func newServices(
