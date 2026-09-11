@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Beginner interface {
@@ -20,6 +21,6 @@ type OrderRepo struct {
 	invalidator Invalidator
 }
 
-func NewOrderRepo(pool Beginner, invalidator Invalidator) *OrderRepo {
-	return &OrderRepo{pool: pool, db: pool.(Querier), invalidator: invalidator}
+func NewOrderRepo(pool *pgxpool.Pool, invalidator Invalidator) *OrderRepo {
+	return &OrderRepo{pool: pool, db: pool, invalidator: invalidator}
 }
