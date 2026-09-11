@@ -9,15 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type Product struct {
-	ID    int
-	Name  string
-	Price float64
-	Stock int
-}
-
 func (r *ProductRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		"SELECT id, name, price, stock FROM products")
 	if err != nil {
 		return nil, err
@@ -41,7 +34,7 @@ func (r *ProductRepo) GetProducts(ctx context.Context) ([]domain.Product, error)
 
 func (r *ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
 	var p domain.Product
-	err := r.pool.QueryRow(ctx,
+	err := r.db.QueryRow(ctx,
 		"SELECT id, name, price, stock FROM products WHERE id = $1", id).
 		Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
 	if err != nil {
@@ -51,4 +44,8 @@ func (r *ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Produ
 		return nil, fmt.Errorf("GetProductByID: %w", err)
 	}
 	return &p, nil
+}
+
+func (r *ProductRepo) InvalidateByID(ctx context.Context, id int) error {
+	return nil
 }

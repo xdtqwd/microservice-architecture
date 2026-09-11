@@ -3,21 +3,16 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
-func (c *RedisCache) Close() error {
-	return c.client.Close()
-}
+var ErrCacheMiss = errors.New("cache miss")
 
 type RedisCache struct {
 	client *redis.Client
-}
-
-func (c *RedisCache) Ping(ctx context.Context) error {
-	return c.client.Ping(ctx).Err()
 }
 
 func New(addr string) *RedisCache {
@@ -27,16 +22,25 @@ func New(addr string) *RedisCache {
 	return &RedisCache{client: client}
 }
 
+func (c *RedisCache) Ping(ctx context.Context) error {
+	return c.client.Ping(ctx).Err()
+}
+
+func (c *RedisCache) Close() error {
+	return c.client.Close()
+}
+
 func (c *RedisCache) Get(ctx context.Context, key string, dest interface{}) error {
 	val, err := c.client.Get(ctx, key).Result()
-	if err == redis.Nil {
-		return redis.Nil
+	if errors.Is(err, redis.Nil) {
+		return ErrCacheMiss
 	}
 	if err != nil {
 		return err
 	}
 	return json.Unmarshal([]byte(val), dest)
 }
+
 func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {

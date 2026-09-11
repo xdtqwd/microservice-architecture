@@ -1,11 +1,26 @@
 package repository
 
-import "github.com/jackc/pgx/v5/pgxpool"
+import (
+	"context"
 
-type OrderRepo struct {
-	pool *pgxpool.Pool
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Beginner interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
-func NewOrderRepo(pool *pgxpool.Pool) *OrderRepo {
-	return &OrderRepo{pool: pool}
+type Invalidator interface {
+	InvalidateByID(ctx context.Context, id int) error
+}
+
+type OrderRepo struct {
+	pool        Beginner
+	db          Querier
+	invalidator Invalidator
+}
+
+func NewOrderRepo(pool *pgxpool.Pool, invalidator Invalidator) *OrderRepo {
+	return &OrderRepo{pool: pool, db: pool, invalidator: invalidator}
 }
