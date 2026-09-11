@@ -2,12 +2,14 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"order-service/internal/cache"
 	"order-service/internal/domain"
 	"time"
 
 	"go.uber.org/zap"
+	"order-service/internal/metrics"
 )
 
 const productTTL = 5 * time.Minute
@@ -15,7 +17,6 @@ const productTTL = 5 * time.Minute
 type ProductStorage interface {
 	GetProducts(ctx context.Context) ([]domain.Product, error)
 	GetProductByID(ctx context.Context, id int) (*domain.Product, error)
-	InvalidateByID(ctx context.Context, id int) error
 }
 
 type CachedProductRepo struct {
@@ -36,12 +37,19 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 	key := fmt.Sprintf("product:%d", id)
 
 	var p domain.Product
-	if err := r.cache.Get(ctx, key, &p); err == nil {
-		r.logger.Info("cache hit", zap.String("key", key))
+	err := r.cache.Get(ctx, key, &p)
+	if err == nil {
+		r.logger.Debug("cache hit", zap.String("key", key))
+		metrics.CacheHits.WithLabelValues("l2").Inc()
 		return &p, nil
 	}
+	if !errors.Is(err, cache.ErrCacheMiss) {
+		r.logger.Error("redis error", zap.Error(err))
+		return nil, err
+	}
 
-	r.logger.Info("cache miss", zap.String("key", key))
+	r.logger.Debug("cache miss", zap.String("key", key))
+	metrics.CacheMisses.WithLabelValues("l2").Inc()
 	product, err := r.repo.GetProductByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -55,8 +63,5 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 
 func (r *CachedProductRepo) InvalidateByID(ctx context.Context, id int) error {
 	key := fmt.Sprintf("product:%d", id)
-	if err := r.cache.Delete(ctx, key); err != nil {
-		r.logger.Error("cache delete error", zap.Error(err))
-	}
-	return r.repo.InvalidateByID(ctx, id)
+	return r.cache.Delete(ctx, key)
 }

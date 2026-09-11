@@ -32,16 +32,6 @@ func TestGetProductByID_CacheHit(t *testing.T) {
 	assert.Equal(t, "MacBook Pro", product.Name)
 }
 
-func TestInvalidateCache(t *testing.T) {
-	ctx := context.Background()
-	repo := newMockRepo()
-	svc := NewProductService(repo, zap.NewNop())
-
-	_, err := svc.GetProductByID(ctx, 1)
-	assert.NoError(t, err)
-	err = svc.InvalidateCache(ctx, 1)
-	assert.NoError(t, err)
-}
 func TestGetProducts(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()

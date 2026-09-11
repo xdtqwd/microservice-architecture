@@ -17,7 +17,7 @@ type Product struct {
 }
 
 func (r *ProductRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		"SELECT id, name, price, stock FROM products")
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func (r *ProductRepo) GetProducts(ctx context.Context) ([]domain.Product, error)
 
 func (r *ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
 	var p domain.Product
-	err := r.pool.QueryRow(ctx,
+	err := r.db.QueryRow(ctx,
 		"SELECT id, name, price, stock FROM products WHERE id = $1", id).
 		Scan(&p.ID, &p.Name, &p.Price, &p.Stock)
 	if err != nil {
