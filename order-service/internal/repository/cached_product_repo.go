@@ -54,11 +54,11 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 	val, err, _ := r.group.Do(key, func() (interface{}, error) {
 		calls := atomic.AddInt64(&r.dbCalls, 1)
 		r.logger.Info("db call", zap.Int64("total", calls))
-		product, err := r.repo.GetProductByID(ctx, id)
+		product, err := r.repo.GetProductByID(context.Background(), id)
 		if err != nil {
 			return nil, err
 		}
-		if err := r.cache.Set(ctx, key, product, productTTL); err != nil {
+		if err := r.cache.Set(context.Background(), key, product, productTTL); err != nil {
 			r.logger.Error("cache set error", zap.Error(err))
 		}
 		return product, nil
