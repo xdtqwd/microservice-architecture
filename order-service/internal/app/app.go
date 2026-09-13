@@ -9,6 +9,7 @@ import (
 	"order-service/internal/handler"
 	"order-service/internal/kafka"
 	"order-service/internal/repository"
+	"order-service/internal/worker"
 	"order-service/internal/txm"
 	"order-service/internal/service"
 	"os"
@@ -28,6 +29,7 @@ type App struct {
 	ctx    context.Context
 	pool   *pgxpool.Pool
 	cache  *cache.RedisCache
+	relay  *worker.OutboxRelay
 }
 
 func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.ProductStorage) {
@@ -88,17 +90,23 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	orderSvc, productSvc := newServices(orderRepo, productRepo, pool, logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
+	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)
 	return &App{
 		server: &http.Server{Addr: cfg.Port, Handler: setupRoutes(h)},
 		logger: logger,
 		ctx:    ctx,
 		pool:   pool,
 		cache:  redisCache,
+		relay:  relay,
 	}, nil
 }
 
 func (a *App) Run() error {
 	a.logger.Info("Order service started", zap.String("port", a.server.Addr))
+
+	relayCtx, relayCancel := context.WithCancel(a.ctx)
+	defer relayCancel()
+	go a.relay.Run(relayCtx)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
