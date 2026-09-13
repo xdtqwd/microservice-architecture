@@ -30,7 +30,7 @@ type App struct {
 func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.ProductStorage) {
 	productRepo := repository.NewProductRepo(pool)
 	cachedProductRepo := repository.NewCachedProductRepo(productRepo, c, logger)
-	return repository.NewOrderRepo(pool), cachedProductRepo
+	return repository.NewOrderRepo(pool, cachedProductRepo), cachedProductRepo
 }
 
 func newServices(
@@ -65,7 +65,7 @@ func setupRoutes(h *handler.Handler) http.Handler {
 func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	cfg := config.Load()
 
-	pool, err := repository.Connect(ctx, cfg.DatabaseURL)
+	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger)
 	if err != nil {
 		return nil, err
 	}
