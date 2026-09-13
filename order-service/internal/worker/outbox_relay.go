@@ -3,13 +3,26 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 	kafkago "github.com/segmentio/kafka-go"
-	"fmt"
 	"go.uber.org/zap"
 )
+
+const maxRetries = 5
+const batchSize = 100
+
+var OutboxLagSeconds = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "outbox_lag_seconds",
+	Help: "Age of the oldest unpublished outbox event in seconds",
+})
+
+func init() {
+	prometheus.MustRegister(OutboxLagSeconds)
+}
 
 type OutboxRelay struct {
 	pool     *pgxpool.Pool
@@ -43,10 +56,21 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 			r.logger.Info("outbox relay stopped")
 			return
 		case <-ticker.C:
+			r.updateLagMetric(ctx)
 			if err := r.processBatch(ctx); err != nil {
 				r.logger.Error("outbox relay error", zap.Error(err))
 			}
 		}
+	}
+}
+
+func (r *OutboxRelay) updateLagMetric(ctx context.Context) {
+	var lagSeconds float64
+	err := r.pool.QueryRow(ctx,
+		"SELECT EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) FROM outbox WHERE published_at IS NULL").
+		Scan(&lagSeconds)
+	if err == nil {
+		OutboxLagSeconds.Set(lagSeconds)
 	}
 }
 
@@ -57,13 +81,13 @@ func (r *OutboxRelay) processBatch(ctx context.Context) error {
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 
-	rows, err := tx.Query(ctx, `
+	rows, err := tx.Query(ctx, fmt.Sprintf(`
 		SELECT id, aggregate_id, event_type, payload
 		FROM outbox
-		WHERE published_at IS NULL
+		WHERE published_at IS NULL AND retry_count < %d
 		ORDER BY id
-		LIMIT 100
-		FOR UPDATE SKIP LOCKED`)
+		LIMIT %d
+		FOR UPDATE SKIP LOCKED`, maxRetries, batchSize))
 	if err != nil {
 		return err
 	}
@@ -82,9 +106,8 @@ func (r *OutboxRelay) processBatch(ctx context.Context) error {
 			return err
 		}
 
-		key := []byte(fmt.Sprintf("%d", aggregateID))
 		msgs = append(msgs, kafkago.Message{
-			Key:   key,
+			Key:   []byte(fmt.Sprintf("%d", aggregateID)),
 			Value: payload,
 		})
 		ids = append(ids, id)
@@ -97,6 +120,13 @@ func (r *OutboxRelay) processBatch(ctx context.Context) error {
 	}
 
 	if err := r.writer.WriteMessages(ctx, msgs...); err != nil {
+		// увеличиваем счётчик попыток
+		_, _ = tx.Exec(ctx,
+			"UPDATE outbox SET retry_count = retry_count + 1, failed_at = NOW() WHERE id = ANY($1)", ids)
+		_ = tx.Commit(context.Background())
+
+		// перемещаем в DLQ если превысили лимит
+		r.moveToDLQ(ctx, ids, err.Error())
 		return err
 	}
 
@@ -107,4 +137,15 @@ func (r *OutboxRelay) processBatch(ctx context.Context) error {
 	}
 
 	return tx.Commit(context.Background())
+}
+
+func (r *OutboxRelay) moveToDLQ(ctx context.Context, ids []int64, errMsg string) {
+	_, err := r.pool.Exec(context.Background(), `
+		INSERT INTO outbox_dlq (aggregate_id, event_type, payload, error)
+		SELECT aggregate_id, event_type, payload, $1
+		FROM outbox WHERE id = ANY($2) AND retry_count >= $3`,
+		errMsg, ids, maxRetries)
+	if err != nil {
+		r.logger.Error("failed to move to DLQ", zap.Error(err))
+	}
 }
