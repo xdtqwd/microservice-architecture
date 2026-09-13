@@ -71,6 +71,16 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 	if err != nil {
 		return 0, err
 	}
+
+	if r.invalidator != nil {
+		for _, item := range items {
+			if err := r.invalidator.InvalidateByID(ctx, item.ProductID); err != nil {
+				_ = err // cache invalidation is best-effort
+
+			}
+		}
+	}
+
 	return orderID, nil
 }
 

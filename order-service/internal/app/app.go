@@ -16,6 +16,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -30,7 +31,8 @@ type App struct {
 func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.ProductStorage) {
 	productRepo := repository.NewProductRepo(pool)
 	cachedProductRepo := repository.NewCachedProductRepo(productRepo, c, logger)
-	return repository.NewOrderRepo(pool), cachedProductRepo
+	l1ProductRepo := repository.NewL1ProductRepo(cachedProductRepo)
+	return repository.NewOrderRepo(pool, cachedProductRepo), l1ProductRepo
 }
 
 func newServices(
@@ -58,7 +60,7 @@ func setupRoutes(h *handler.Handler) http.Handler {
 	r.HandleFunc("/orders", h.GetOrders).Methods("GET")
 	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
-	r.HandleFunc("/products/{id}/cache", h.InvalidateProductCache).Methods("DELETE")
+	r.Handle("/metrics", promhttp.Handler())
 	return r
 }
 
