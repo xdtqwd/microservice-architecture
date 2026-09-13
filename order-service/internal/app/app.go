@@ -7,7 +7,9 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
+	"order-service/internal/kafka"
 	"order-service/internal/repository"
+	"order-service/internal/txm"
 	"order-service/internal/service"
 	"os"
 	"os/signal"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
@@ -36,9 +39,12 @@ func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger
 func newServices(
 	orderRepo *repository.OrderRepo,
 	productRepo repository.ProductStorage,
+	pool *pgxpool.Pool,
 	logger *zap.Logger,
 ) (*service.OrderService, *service.ProductService) {
-	return service.NewOrderService(orderRepo),
+	txManager := txm.New(pool)
+	producer := kafka.NewProducer([]string{"kafka:9092"})
+	return service.NewOrderService(orderRepo, txManager, logger, producer),
 		service.NewProductService(productRepo, logger)
 }
 
@@ -59,13 +65,14 @@ func setupRoutes(h *handler.Handler) http.Handler {
 	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
 	r.HandleFunc("/products/{id}/cache", h.InvalidateProductCache).Methods("DELETE")
+	r.Handle("/metrics", promhttp.Handler())
 	return r
 }
 
 func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	cfg := config.Load()
 
-	pool, err := repository.Connect(ctx, cfg.DatabaseURL)
+	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +84,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	logger.Info("Redis connected!")
 
 	orderRepo, productRepo := newRepositories(pool, redisCache, logger)
-	orderSvc, productSvc := newServices(orderRepo, productRepo, logger)
+	orderSvc, productSvc := newServices(orderRepo, productRepo, pool, logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
 	return &App{
