@@ -44,7 +44,8 @@ func newServices(
 ) (*service.OrderService, *service.ProductService) {
 	txManager := txm.New(pool)
 	producer := kafka.NewProducer([]string{"kafka:9092"})
-	return service.NewOrderService(orderRepo, txManager, logger, producer),
+	outboxRepo := repository.NewOutboxRepo(pool)
+	return service.NewOrderService(orderRepo, txManager, logger, producer, outboxRepo),
 		service.NewProductService(productRepo, logger)
 }
 

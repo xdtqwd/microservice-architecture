@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"order-service/internal/domain"
+	"order-service/internal/repository"
 	"order-service/internal/kafka"
 	"go.uber.org/zap"
 	"order-service/internal/retry"
@@ -21,11 +22,12 @@ type OrderService struct {
 	txm      *txm.TxManager
 	logger   *zap.Logger
 	producer *kafka.Producer
+	outbox   *repository.OutboxRepo
 	group    singleflight.Group
 }
 
-func NewOrderService(repo OrderRepository, txm *txm.TxManager, logger *zap.Logger, producer *kafka.Producer) *OrderService {
-	return &OrderService{repo: repo, txm: txm, logger: logger, producer: producer}
+func NewOrderService(repo OrderRepository, txm *txm.TxManager, logger *zap.Logger, producer *kafka.Producer, outbox *repository.OutboxRepo) *OrderService {
+	return &OrderService{repo: repo, txm: txm, logger: logger, producer: producer, outbox: outbox}
 }
 
 func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
@@ -71,9 +73,22 @@ func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrd
 	var exists bool
 	retries := 0
 	err := retry.Do(ctx, s.logger, &retries, func(ctx context.Context) error {
-		var e error
-		orderID, exists, e = s.repo.CreateOrder(ctx, orderItems, idempotencyKey)
-		return e
+		if s.txm == nil {
+			var e error
+			orderID, exists, e = s.repo.CreateOrder(ctx, orderItems, idempotencyKey)
+			return e
+		}
+		return s.txm.Do(ctx, func(ctx context.Context) error {
+			var e error
+			orderID, exists, e = s.repo.CreateOrder(ctx, orderItems, idempotencyKey)
+			if e != nil || exists {
+				return e
+			}
+			if s.outbox != nil {
+				e = s.outbox.Insert(ctx, orderID, "order_created", map[string]int{"order_id": orderID})
+			}
+			return e
+		})
 	})
 	if err == nil && !exists && s.producer != nil {
 		// СЦЕНАРИЙ 1: раскомментировать чтобы воспроизвести
