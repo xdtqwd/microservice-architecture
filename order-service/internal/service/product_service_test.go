@@ -54,27 +54,27 @@ func TestGetProducts(t *testing.T) {
 func TestGetOrders_LimitCappedToMax(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
-	svc := NewOrderService(repo)
+	svc := NewOrderService(repo, nil, zap.NewNop())
 
 	items := []domain.CreateOrderItem{{ProductID: 1, Quantity: 1}}
 	for i := 0; i < 5; i++ {
-		_, err := svc.CreateOrder(ctx, items)
+		_, _, err := svc.CreateOrder(ctx, items, "")
 		assert.NoError(t, err)
 	}
 
-	orders, err := svc.GetOrders(ctx, 10000, 0)
+	orders, _, err := svc.GetOrders(ctx, 10000, nil)
 	assert.NoError(t, err)
 	assert.LessOrEqual(t, len(orders), 100)
 
-	orders, err = svc.GetOrders(ctx, -1, 0)
+	orders, _, err = svc.GetOrders(ctx, -1, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, orders)
 
-	orders, err = svc.GetOrders(ctx, 2, 0)
+	orders, _, err = svc.GetOrders(ctx, 2, nil)
 	assert.NoError(t, err)
 	assert.Len(t, orders, 2)
 
-	orders, err = svc.GetOrders(ctx, 2, 2)
+	orders, _, err = svc.GetOrders(ctx, 2, &domain.OrderCursor{AfterID: 2})
 	assert.NoError(t, err)
 	assert.Len(t, orders, 2)
 }
