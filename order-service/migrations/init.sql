@@ -25,3 +25,12 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     order_id    INT NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS outbox (
+    id           BIGSERIAL PRIMARY KEY,
+    aggregate_id INT NOT NULL,
+    event_type   TEXT NOT NULL,
+    payload      JSONB NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    published_at TIMESTAMPTZ
+);
