@@ -15,7 +15,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.1'
+          go-version-file: order-service/go.mod
           cache-dependency-path: order-service/go.sum
 
       - name: Install golangci-lint
@@ -44,9 +44,13 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
-      - name: Build
+      - name: Build order-service
         working-directory: order-service
-        run: go build -o server ./cmd
+        run: go build -o server ./cmd && go vet ./...
+
+      - name: Build product-service
+        working-directory: product-service
+        run: go build -o product-service . && go vet ./...
 
       - name: Docker build
         uses: docker/build-push-action@v5
