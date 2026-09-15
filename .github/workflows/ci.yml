@@ -35,7 +35,23 @@ jobs:
 
       - name: Coverage
         working-directory: order-service
-        run: go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
+        run: go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tee coverage.txt
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            order-service/coverage.out
+            order-service/coverage.txt
+
+      - name: Coverage summary
+        working-directory: order-service
+        run: |
+          TOTAL=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
+          echo "## Coverage: $TOTAL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.out >> $GITHUB_STEP_SUMMARY
 
       - name: govulncheck
         continue-on-error: true
