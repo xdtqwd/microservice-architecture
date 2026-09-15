@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"order-service/internal/domain"
 	"strconv"
-	"time"
 
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
@@ -58,8 +57,7 @@ func (h *Handler) GetProducts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-	defer cancel()
+	ctx := r.Context()
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
 		writeError(w, h.logger, domain.ErrProductNotFound)
