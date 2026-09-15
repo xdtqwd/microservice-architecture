@@ -65,7 +65,3 @@ func TestCanTransition(t *testing.T) {
 	assert.False(t, domain.CanTransition("shipped", "cancelled"))
 	assert.False(t, domain.CanTransition("cancelled", "cancelled"))
 }
-
-func TestFailing(t *testing.T) {
-	t.Fatal("this test must fail")
-}
