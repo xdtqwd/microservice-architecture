@@ -7,8 +7,11 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
+	"order-service/internal/kafka"
 	"order-service/internal/repository"
 	"order-service/internal/service"
+	"order-service/internal/txm"
+	"order-service/internal/worker"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +19,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -25,6 +29,7 @@ type App struct {
 	ctx    context.Context
 	pool   *pgxpool.Pool
 	cache  *cache.RedisCache
+	relay  *worker.OutboxRelay
 }
 
 func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.ProductStorage) {
@@ -36,9 +41,13 @@ func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger
 func newServices(
 	orderRepo *repository.OrderRepo,
 	productRepo repository.ProductStorage,
+	pool *pgxpool.Pool,
 	logger *zap.Logger,
 ) (*service.OrderService, *service.ProductService) {
-	return service.NewOrderService(orderRepo),
+	txManager := txm.New(pool)
+	producer := kafka.NewProducer([]string{"kafka:9092"})
+	outboxRepo := repository.NewOutboxRepo(pool)
+	return service.NewOrderService(orderRepo, txManager, logger, producer, outboxRepo),
 		service.NewProductService(productRepo, logger)
 }
 
@@ -50,7 +59,7 @@ func newHandler(
 	return handler.New(orderSvc, productSvc, logger)
 }
 
-func setupRoutes(h *handler.Handler) http.Handler {
+func setupRoutes(h *handler.Handler, logger *zap.Logger) http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/products", h.GetProducts).Methods("GET")
 	r.HandleFunc("/products/{id}", h.GetProductByID).Methods("GET")
@@ -59,13 +68,22 @@ func setupRoutes(h *handler.Handler) http.Handler {
 	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
 	r.HandleFunc("/products/{id}/cache", h.InvalidateProductCache).Methods("DELETE")
-	return r
+	r.Handle("/metrics", promhttp.Handler())
+
+	chain := handler.RequestID(
+		handler.Logger(logger)(
+			handler.Recover(logger)(
+				handler.Timeout(10 * time.Second)(r),
+			),
+		),
+	)
+	return chain
 }
 
 func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	cfg := config.Load()
 
-	pool, err := repository.Connect(ctx, cfg.DatabaseURL)
+	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -77,20 +95,26 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	logger.Info("Redis connected!")
 
 	orderRepo, productRepo := newRepositories(pool, redisCache, logger)
-	orderSvc, productSvc := newServices(orderRepo, productRepo, logger)
+	orderSvc, productSvc := newServices(orderRepo, productRepo, pool, logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
+	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)
 	return &App{
-		server: &http.Server{Addr: cfg.Port, Handler: setupRoutes(h)},
+		server: &http.Server{Addr: cfg.Port, Handler: setupRoutes(h, logger)},
 		logger: logger,
 		ctx:    ctx,
 		pool:   pool,
 		cache:  redisCache,
+		relay:  relay,
 	}, nil
 }
 
 func (a *App) Run() error {
 	a.logger.Info("Order service started", zap.String("port", a.server.Addr))
+
+	relayCtx, relayCancel := context.WithCancel(a.ctx)
+	defer relayCancel()
+	go a.relay.Run(relayCtx)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
