@@ -59,7 +59,7 @@ func newHandler(
 	return handler.New(orderSvc, productSvc, logger)
 }
 
-func setupRoutes(h *handler.Handler, logger *zap.Logger) http.Handler {
+func setupRoutes(h *handler.Handler, health *handler.HealthHandler, logger *zap.Logger) http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/products", h.GetProducts).Methods("GET")
 	r.HandleFunc("/products/{id}", h.GetProductByID).Methods("GET")
@@ -68,6 +68,8 @@ func setupRoutes(h *handler.Handler, logger *zap.Logger) http.Handler {
 	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
 	r.HandleFunc("/products/{id}/cache", h.InvalidateProductCache).Methods("DELETE")
+	r.HandleFunc("/healthz", health.Liveness)
+	r.HandleFunc("/readyz", health.Readiness)
 	r.Handle("/metrics", promhttp.Handler())
 
 	chain := handler.RequestID(
@@ -100,7 +102,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 
 	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)
 	return &App{
-		server: &http.Server{Addr: cfg.Port, Handler: setupRoutes(h, logger)},
+		server: &http.Server{Addr: cfg.Port, Handler: setupRoutes(h, handler.NewHealthHandler(pool, redisCache), logger)},
 		logger: logger,
 		ctx:    ctx,
 		pool:   pool,
