@@ -4,6 +4,9 @@ import (
 	"context"
 	"net/http"
 	"runtime/debug"
+	"strconv"
+
+	"order-service/internal/metrics"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,13 +33,19 @@ func Logger(logger *zap.Logger) func(http.Handler) http.Handler {
 			rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rw, r)
 			id, _ := r.Context().Value(requestIDKey).(string)
+			dur := time.Since(start)
 			logger.Info("request",
 				zap.String("request_id", id),
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 				zap.Int("status", rw.status),
-				zap.Duration("duration", time.Since(start)),
+				zap.Duration("duration", dur),
 			)
+			metrics.HTTPDuration.WithLabelValues(
+				r.Method,
+				r.URL.Path,
+				strconv.Itoa(rw.status),
+			).Observe(dur.Seconds())
 		})
 	}
 }

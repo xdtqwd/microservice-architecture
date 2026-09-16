@@ -7,6 +7,7 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
+	"order-service/internal/metrics"
 	"order-service/internal/kafka"
 	"order-service/internal/repository"
 	"order-service/internal/service"
@@ -117,6 +118,22 @@ func (a *App) Run() error {
 	relayCtx, relayCancel := context.WithCancel(a.ctx)
 	defer relayCancel()
 	go a.relay.Run(relayCtx)
+
+	// метрики пула соединений
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-relayCtx.Done():
+				return
+			case <-ticker.C:
+				stat := a.pool.Stat()
+				metrics.DBPoolAcquired.Set(float64(stat.AcquiredConns()))
+				metrics.DBPoolIdle.Set(float64(stat.IdleConns()))
+			}
+		}
+	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
