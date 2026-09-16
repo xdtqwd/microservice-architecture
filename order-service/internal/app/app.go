@@ -7,8 +7,9 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
-	"order-service/internal/metrics"
+
 	"order-service/internal/kafka"
+	"order-service/internal/metrics"
 	"order-service/internal/repository"
 	"order-service/internal/service"
 	"order-service/internal/txm"
@@ -84,9 +85,12 @@ func setupRoutes(h *handler.Handler, health *handler.HealthHandler, logger *zap.
 }
 
 func New(ctx context.Context, logger *zap.Logger) (*App, error) {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
 
-	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger)
+	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger, cfg.DBMaxConns, cfg.DBMinConns)
 	if err != nil {
 		return nil, err
 	}
