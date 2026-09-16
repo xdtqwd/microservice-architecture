@@ -23,7 +23,7 @@ func NewHealthHandler(db Pinger, cache Pinger) *HealthHandler {
 func (h *HealthHandler) Liveness(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func (h *HealthHandler) Readiness(w http.ResponseWriter, r *http.Request) {
@@ -42,9 +42,9 @@ func (h *HealthHandler) Readiness(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if len(errs) > 0 {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]any{"status": "unavailable", "errors": errs})
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "unavailable", "errors": errs})
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
