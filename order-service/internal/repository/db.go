@@ -45,6 +45,6 @@ func Connect(ctx context.Context, url string, logger *zap.Logger, maxConns, minC
 	cfg.MinConns = minConns
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.MaxConnIdleTime = 5 * time.Minute
-	cfg.ConnConfig.Config.ConnectTimeout = 5 * time.Second
+	cfg.ConnConfig.ConnectTimeout = 5 * time.Second
 	return pgxpool.NewWithConfig(ctx, cfg)
 }
