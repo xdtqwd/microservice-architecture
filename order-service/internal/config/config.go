@@ -23,8 +23,8 @@ func Load() (*Config, error) {
 		DatabaseURL: dbURL,
 		Port:        getEnv("PORT", ":8083"),
 		RedisAddr:   getEnv("REDIS_ADDR", "localhost:6379"),
-		DBMaxConns:  25,
-		DBMinConns:  5,
+		DBMaxConns:  10,
+		DBMinConns:  2,
 	}, nil
 }
 
