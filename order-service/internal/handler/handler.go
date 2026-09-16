@@ -75,9 +75,18 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
 	var reqs []CreateOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
+		if err.Error() == "http: request body too large" {
+			http.Error(w, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
+			return
+		}
 		writeError(w, h.logger, errors.New("invalid request body"))
+		return
+	}
+	if len(reqs) == 0 || len(reqs) > 100 {
+		writeError(w, h.logger, errors.New("order must have 1 to 100 items"))
 		return
 	}
 

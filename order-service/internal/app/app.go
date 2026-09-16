@@ -107,7 +107,14 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 
 	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)
 	return &App{
-		server: &http.Server{Addr: cfg.Port, Handler: setupRoutes(h, handler.NewHealthHandler(pool, redisCache), logger)},
+		server: &http.Server{
+			Addr:              cfg.Port,
+			Handler:           setupRoutes(h, handler.NewHealthHandler(pool, redisCache), logger),
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      15 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		},
 		logger: logger,
 		ctx:    ctx,
 		pool:   pool,
