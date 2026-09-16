@@ -94,6 +94,10 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := pool.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("postgres unavailable: %w", err)
+	}
+	logger.Info("postgres connected!")
 
 	redisCache := cache.New(cfg.RedisAddr)
 	if err := redisCache.Ping(ctx); err != nil {
