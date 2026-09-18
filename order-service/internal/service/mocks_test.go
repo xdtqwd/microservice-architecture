@@ -15,6 +15,7 @@ type mockRepo struct {
 	nextID          int
 	idempotencyKeys map[string]int
 	mu              sync.Mutex
+	dbCalls         int // счётчик обращений к репозиторию
 }
 
 func newMockRepo() *mockRepo {
@@ -111,6 +112,9 @@ func (m *mockRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
 }
 
 func (m *mockRepo) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
+	m.mu.Lock()
+	m.dbCalls++
+	m.mu.Unlock()
 	for _, p := range m.products {
 		if p.ID == id {
 			return &p, nil
