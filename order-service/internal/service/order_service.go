@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"order-service/internal/domain"
-	"order-service/internal/repository"
 	"order-service/internal/kafka"
-	"go.uber.org/zap"
+	"order-service/internal/repository"
 	"order-service/internal/retry"
 	"order-service/internal/txm"
+
+	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -32,7 +33,10 @@ func NewOrderService(repo OrderRepository, txm *txm.TxManager, logger *zap.Logge
 
 func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
 	if idempotencyKey != "" {
-		type result struct{ id int; exists bool }
+		type result struct {
+			id     int
+			exists bool
+		}
 		val, err, _ := s.group.Do(idempotencyKey, func() (interface{}, error) {
 			id, exists, err := s.createOrder(context.Background(), items, idempotencyKey)
 			return result{id, exists}, err

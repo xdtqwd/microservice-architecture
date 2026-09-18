@@ -2,18 +2,20 @@ package service
 
 import (
 	"context"
-	"go.uber.org/zap"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+
 	"order-service/internal/domain"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCancelOrder_InvalidTransitions(t *testing.T) {
 	tests := []struct {
-		name        string
-		status      string
-		expectErr   error
+		name      string
+		status    string
+		expectErr error
 	}{
 		{"delivered нельзя отменить", "delivered", domain.ErrInvalidStatusTransition},
 		{"shipped нельзя отменить", "shipped", domain.ErrInvalidStatusTransition},

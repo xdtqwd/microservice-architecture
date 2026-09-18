@@ -128,8 +128,8 @@ func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type response struct {
-		Orders []OrderResponse `json:"orders"`
-		NextAfterID *int `json:"next_after_id,omitempty"`
+		Orders      []OrderResponse `json:"orders"`
+		NextAfterID *int            `json:"next_after_id,omitempty"`
 	}
 	resp := response{Orders: make([]OrderResponse, len(orders))}
 	for i, o := range orders {

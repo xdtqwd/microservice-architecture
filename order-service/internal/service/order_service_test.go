@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
-	"go.uber.org/zap"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+
 	"order-service/internal/domain"
+
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCreateOrder_Success(t *testing.T) {
