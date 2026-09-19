@@ -34,8 +34,8 @@ type CreateOrderItem struct {
 }
 
 type OrderCursor struct {
-	AfterID    int
-	CreatedAt  time.Time
+	AfterID   int
+	CreatedAt time.Time
 }
 
 var allowedTransitions = map[string][]string{
