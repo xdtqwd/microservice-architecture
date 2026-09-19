@@ -7,9 +7,10 @@ import (
 	"order-service/internal/domain"
 	"time"
 
+	"sync/atomic"
+
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
-	"sync/atomic"
 )
 
 const productTTL = 5 * time.Minute
