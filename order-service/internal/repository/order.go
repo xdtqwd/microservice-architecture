@@ -94,6 +94,13 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 			return 0, false, err
 		}
 	}
+	// сбрасываем кеш товаров: остатки изменились
+	for _, item := range items {
+		if err := r.invalidator.InvalidateByID(ctx, item.ProductID); err != nil {
+			return 0, false, err
+		}
+	}
+
 	return orderID, false, nil
 }
 

@@ -7,10 +7,6 @@ var RetryTotal = prometheus.NewCounter(prometheus.CounterOpts{
 	Help: "Total number of transaction retries due to serialization conflicts",
 })
 
-func init() {
-	prometheus.MustRegister(RetryTotal)
-}
-
 var HTTPDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    "http_request_duration_seconds",
 	Help:    "HTTP request duration in seconds",
@@ -27,8 +23,30 @@ var DBPoolIdle = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Number of idle connections in pgxpool",
 })
 
+var (
+	CacheHits = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cache_hits_total",
+			Help: "Total cache hits by level",
+		},
+		[]string{"level"},
+	)
+	CacheMisses = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cache_misses_total",
+			Help: "Total cache misses by level",
+		},
+		[]string{"level"},
+	)
+)
+
 func init() {
-	prometheus.MustRegister(HTTPDuration)
-	prometheus.MustRegister(DBPoolAcquired)
-	prometheus.MustRegister(DBPoolIdle)
+	prometheus.MustRegister(
+		RetryTotal,
+		HTTPDuration,
+		DBPoolAcquired,
+		DBPoolIdle,
+		CacheHits,
+		CacheMisses,
+	)
 }
