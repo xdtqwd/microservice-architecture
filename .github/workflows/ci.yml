@@ -15,7 +15,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.1'
+          go-version-file: order-service/go.mod
           cache-dependency-path: order-service/go.sum
 
       - name: Install golangci-lint
@@ -35,18 +35,37 @@ jobs:
 
       - name: Coverage
         working-directory: order-service
-        run: go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
+        run: go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tee coverage.txt
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            order-service/coverage.out
+            order-service/coverage.txt
+
+      - name: Coverage summary
+        working-directory: order-service
+        run: |
+          TOTAL=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
+          echo "## Coverage: $TOTAL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.out >> $GITHUB_STEP_SUMMARY
 
       - name: govulncheck
-        continue-on-error: true
         working-directory: order-service
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
-      - name: Build
+      - name: Build order-service
         working-directory: order-service
-        run: go build -o server ./cmd
+        run: go build -o server ./cmd && go vet ./...
+
+      - name: Build product-service
+        working-directory: product-service
+        run: go build -o product-service . && go vet ./...
 
       - name: Docker build
         uses: docker/build-push-action@v5
