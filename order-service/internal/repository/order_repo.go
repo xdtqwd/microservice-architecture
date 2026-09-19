@@ -5,14 +5,21 @@ import (
 	"order-service/internal/txm"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
-type OrderRepo struct {
-	pool *pgxpool.Pool
+type Invalidator interface {
+	InvalidateByID(ctx context.Context, id int) error
 }
 
-func NewOrderRepo(pool *pgxpool.Pool) *OrderRepo {
-	return &OrderRepo{pool: pool}
+type OrderRepo struct {
+	pool        *pgxpool.Pool
+	invalidator Invalidator
+	logger      *zap.Logger
+}
+
+func NewOrderRepo(pool *pgxpool.Pool, invalidator Invalidator, logger *zap.Logger) *OrderRepo {
+	return &OrderRepo{pool: pool, invalidator: invalidator, logger: logger}
 }
 
 // querier возвращает транзакцию из контекста или пул напрямую

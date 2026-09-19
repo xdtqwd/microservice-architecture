@@ -6,6 +6,8 @@ import (
 	"order-service/internal/domain"
 	"time"
 
+	"order-service/internal/metrics"
+
 	lru "github.com/hashicorp/golang-lru/v2/expirable"
 )
 
@@ -18,12 +20,17 @@ func productKey(id int) string {
 	return fmt.Sprintf("product:%d", id)
 }
 
+type StorageWithInvalidation interface {
+	ProductStorage
+	InvalidateByID(ctx context.Context, id int) error
+}
+
 type L1ProductRepo struct {
-	repo  ProductStorage
+	repo  StorageWithInvalidation
 	cache *lru.LRU[string, domain.Product]
 }
 
-func NewL1ProductRepo(repo ProductStorage) *L1ProductRepo {
+func NewL1ProductRepo(repo StorageWithInvalidation) *L1ProductRepo {
 	cache := lru.NewLRU[string, domain.Product](l1MaxSize, nil, l1TTL)
 	return &L1ProductRepo{repo: repo, cache: cache}
 }
@@ -36,6 +43,7 @@ func (r *L1ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Pro
 	key := productKey(id)
 
 	if p, ok := r.cache.Get(key); ok {
+		metrics.CacheHits.WithLabelValues("l1").Inc()
 		copy := p
 		return &copy, nil
 	}
@@ -45,6 +53,7 @@ func (r *L1ProductRepo) GetProductByID(ctx context.Context, id int) (*domain.Pro
 		return nil, err
 	}
 
+	metrics.CacheMisses.WithLabelValues("l1").Inc()
 	r.cache.Add(key, *p)
 	return p, nil
 }

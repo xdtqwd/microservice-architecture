@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { config } from './config.js';
 
 export const options = {
     vus: 100,
@@ -7,7 +8,7 @@ export const options = {
 };
 
 export default function () {
-    const res = http.get('http://localhost:8083/products/1');
+    const res = http.get(`${config.baseUrl}/products/1`);
     check(res, { 'status 200': (r) => r.status === 200 });
     sleep(0.1);
 }
