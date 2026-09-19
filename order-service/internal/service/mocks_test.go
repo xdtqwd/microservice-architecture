@@ -69,6 +69,8 @@ func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, id
 }
 
 func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, o := range m.orders {
 		if o.ID == id {
 			return &o, nil
@@ -93,6 +95,8 @@ func (m *mockRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Orde
 	return orders, nextCursor, nil
 }
 func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for i, o := range m.orders {
 		if o.ID == id {
 			if !domain.CanTransition(o.Status, "cancelled") {
