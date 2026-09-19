@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+	"go.uber.org/zap"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -94,10 +95,17 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 			return 0, false, err
 		}
 	}
-	// сбрасываем кеш товаров: остатки изменились
+	// сбрасываем кеш товаров: остатки изменились.
+	// заказ уже закоммичен, поэтому сбой инвалидации только логируем —
+	// вернуть ошибку значило бы сказать клиенту, что заказа нет.
+	// контекст свой: запросный к этому моменту может быть уже отменён
+	invalidCtx := context.Background()
 	for _, item := range items {
-		if err := r.invalidator.InvalidateByID(ctx, item.ProductID); err != nil {
-			return 0, false, err
+		if err := r.invalidator.InvalidateByID(invalidCtx, item.ProductID); err != nil {
+			r.logger.Error("cache invalidation failed",
+				zap.Error(err),
+				zap.Int("product_id", item.ProductID),
+				zap.Int("order_id", orderID))
 		}
 	}
 

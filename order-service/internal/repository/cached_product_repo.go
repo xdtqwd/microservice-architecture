@@ -86,10 +86,13 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 
 func (r *CachedProductRepo) InvalidateByID(ctx context.Context, id int) error {
 	key := fmt.Sprintf("product:%d", id)
+	// порядок важен: сначала Delete, потом Forget.
+	// Forget убирает ключ из карты, и новые запросы не ждут лидера,
+	// но уже запущенный лидер всё равно запишет прочитанное до сброса.
+	// окно гонки остаётся узким — между Do и Set лидера
 	if err := r.cache.Delete(ctx, key); err != nil {
-		return err
+		r.logger.Error("cache delete error", zap.Error(err))
 	}
-	// сбрасываем и ожидающих: иначе они получат остаток, прочитанный до отмены
 	r.group.Forget(key)
 	return nil
 }
