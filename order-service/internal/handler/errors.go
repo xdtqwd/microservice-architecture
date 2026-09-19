@@ -19,6 +19,8 @@ var errToStatus = map[error]int{
 	domain.ErrInsufficientStock:       http.StatusConflict,
 	domain.ErrInvalidStatusTransition: http.StatusConflict,
 	domain.ErrOrderAlreadyCancelled:   http.StatusConflict,
+	domain.ErrInvalidCursor:           http.StatusBadRequest,
+	domain.ErrOffsetNotSupported:      http.StatusBadRequest,
 }
 
 func writeError(w http.ResponseWriter, logger *zap.Logger, err error) {

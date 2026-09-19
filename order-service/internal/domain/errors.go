@@ -10,3 +10,8 @@ var (
 )
 
 var ErrOrderAlreadyCancelled = errors.New("order already cancelled")
+
+var (
+	ErrInvalidCursor = errors.New("invalid cursor")
+	ErrOffsetNotSupported = errors.New("offset is not supported, use after_id for pagination")
+)
