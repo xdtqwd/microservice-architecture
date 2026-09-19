@@ -1,19 +1,31 @@
 package config
 
-import "os"
+import (
+	"errors"
+	"os"
+)
 
 type Config struct {
 	DatabaseURL string
 	Port        string
 	RedisAddr   string
+	DBMaxConns  int32
+	DBMinConns  int32
 }
 
-func Load() *Config {
+func Load() (*Config, error) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return nil, errors.New("DATABASE_URL is required")
+	}
+
 	return &Config{
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://postgres:password@localhost:5436/orders_db"),
+		DatabaseURL: dbURL,
 		Port:        getEnv("PORT", ":8083"),
 		RedisAddr:   getEnv("REDIS_ADDR", "localhost:6379"),
-	}
+		DBMaxConns:  10,
+		DBMinConns:  2,
+	}, nil
 }
 
 func getEnv(key, fallback string) string {

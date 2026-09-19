@@ -2,10 +2,49 @@ package repository
 
 import (
 	"context"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
-func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
-	return pgxpool.New(ctx, url)
+type ctxKey string
+
+const queryStartKey ctxKey = "query_start"
+
+type queryTracer struct {
+	logger *zap.Logger
+}
+
+func (t *queryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+	t.logger.Info("sql query", zap.String("sql", data.SQL))
+	return context.WithValue(ctx, queryStartKey, time.Now())
+}
+
+func (t *queryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
+	start, _ := ctx.Value(queryStartKey).(time.Time)
+	t.logger.Info("sql query done",
+		zap.Duration("duration", time.Since(start)),
+		zap.String("err", func() string {
+			if data.Err != nil {
+				return data.Err.Error()
+			}
+			return ""
+		}()),
+	)
+}
+
+func Connect(ctx context.Context, url string, logger *zap.Logger, maxConns, minConns int32) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	cfg.ConnConfig.Tracer = &queryTracer{logger: logger}
+	cfg.MaxConns = maxConns
+	cfg.MinConns = minConns
+	cfg.MaxConnLifetime = 30 * time.Minute
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	cfg.ConnConfig.ConnectTimeout = 5 * time.Second
+	return pgxpool.NewWithConfig(ctx, cfg)
 }

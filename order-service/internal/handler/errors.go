@@ -14,11 +14,11 @@ type errorResponse struct {
 }
 
 var errToStatus = map[error]int{
-	domain.ErrOrderNotFound:            http.StatusNotFound,
-	domain.ErrProductNotFound:          http.StatusNotFound,
-	domain.ErrInsufficientStock:        http.StatusConflict,
-	domain.ErrInvalidStatusTransition:  http.StatusConflict,
-	domain.ErrOrderAlreadyCancelled: http.StatusConflict,
+	domain.ErrOrderNotFound:           http.StatusNotFound,
+	domain.ErrProductNotFound:         http.StatusNotFound,
+	domain.ErrInsufficientStock:       http.StatusConflict,
+	domain.ErrInvalidStatusTransition: http.StatusConflict,
+	domain.ErrOrderAlreadyCancelled:   http.StatusConflict,
 }
 
 func writeError(w http.ResponseWriter, logger *zap.Logger, err error) {

@@ -7,15 +7,14 @@ import (
 	"net/http"
 	"order-service/internal/domain"
 	"strconv"
-	"time"
 
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )
 
 type OrderService interface {
-	CreateOrder(ctx context.Context, items []domain.CreateOrderItem) (int, error)
-	GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error)
+	CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error)
+	GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error)
 	GetOrderByID(ctx context.Context, id int) (*domain.Order, error)
 	CancelOrder(ctx context.Context, id int) (int, error)
 }
@@ -58,8 +57,7 @@ func (h *Handler) GetProducts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-	defer cancel()
+	ctx := r.Context()
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
 		writeError(w, h.logger, domain.ErrProductNotFound)
@@ -77,9 +75,18 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
 	var reqs []CreateOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
+		if err.Error() == "http: request body too large" {
+			http.Error(w, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
+			return
+		}
 		writeError(w, h.logger, errors.New("invalid request body"))
+		return
+	}
+	if len(reqs) == 0 || len(reqs) > 100 {
+		writeError(w, h.logger, errors.New("order must have 1 to 100 items"))
 		return
 	}
 
@@ -91,13 +98,18 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	orderID, err := h.orderSvc.CreateOrder(r.Context(), items)
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+	orderID, exists, err := h.orderSvc.CreateOrder(r.Context(), items, idempotencyKey)
 	if err != nil {
 		writeError(w, h.logger, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	if exists {
+		w.WriteHeader(http.StatusOK)
+	} else {
+		w.WriteHeader(http.StatusCreated)
+	}
 	if err := json.NewEncoder(w).Encode(map[string]int{"id": orderID}); err != nil {
 		writeError(w, h.logger, err)
 	}
@@ -105,19 +117,29 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	var cursor *domain.OrderCursor
+	if afterID, _ := strconv.Atoi(r.URL.Query().Get("after_id")); afterID > 0 {
+		cursor = &domain.OrderCursor{AfterID: afterID}
+	}
 
-	orders, err := h.orderSvc.GetOrders(r.Context(), limit, offset)
+	orders, nextCursor, err := h.orderSvc.GetOrders(r.Context(), limit, cursor)
 	if err != nil {
 		writeError(w, h.logger, err)
 		return
 	}
-	responses := make([]OrderResponse, len(orders))
+	type response struct {
+		Orders      []OrderResponse `json:"orders"`
+		NextAfterID *int            `json:"next_after_id,omitempty"`
+	}
+	resp := response{Orders: make([]OrderResponse, len(orders))}
 	for i, o := range orders {
-		responses[i] = orderToResponse(&o)
+		resp.Orders[i] = orderToResponse(&o)
+	}
+	if nextCursor != nil {
+		resp.NextAfterID = &nextCursor.AfterID
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(responses); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		writeError(w, h.logger, err)
 	}
 }
