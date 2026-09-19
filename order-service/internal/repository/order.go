@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"sort"
 	"order-service/internal/domain"
-	"github.com/shopspring/decimal"
 	"time"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -27,19 +28,31 @@ type OrderItem struct {
 	Price     float64
 }
 
-func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return 0, err
+func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, bool, error) {
+	if idempotencyKey != "" {
+		_, err := r.pool.Exec(context.Background(),
+			"INSERT INTO idempotency_keys (key, order_id) VALUES ($1, 0) ON CONFLICT (key) DO NOTHING",
+			idempotencyKey)
+		if err != nil {
+			return 0, false, err
+		}
+		var existingID int
+		err = r.pool.QueryRow(context.Background(),
+			"SELECT order_id FROM idempotency_keys WHERE key = $1",
+			idempotencyKey).Scan(&existingID)
+		if err == nil && existingID > 0 {
+			return existingID, true, nil
+		}
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := r.querier(ctx)
 
 	var orderID int
-	err = tx.QueryRow(ctx,
+	err := q.QueryRow(ctx,
 		"INSERT INTO orders (status) VALUES ('pending') RETURNING id").
 		Scan(&orderID)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 
 	sort.Slice(items, func(i, j int) bool {
@@ -48,36 +61,40 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (
 
 	for _, item := range items {
 		var price decimal.Decimal
-		err = tx.QueryRow(ctx,
+		err = q.QueryRow(ctx,
 			"SELECT price FROM products WHERE id = $1", item.ProductID).Scan(&price)
 		if err != nil {
-			return 0, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
+			return 0, false, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
 		}
 
-		tag, err := tx.Exec(ctx,
+		tag, err := q.Exec(ctx,
 			"UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1",
 			item.Quantity, item.ProductID)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		if tag.RowsAffected() == 0 {
-			return 0, fmt.Errorf("CreateOrder: %w", domain.ErrInsufficientStock)
+			return 0, false, fmt.Errorf("CreateOrder: %w", domain.ErrInsufficientStock)
 		}
 
-		_, err = tx.Exec(ctx,
+		_, err = q.Exec(ctx,
 			`INSERT INTO order_items (order_id, product_id, quantity, price)
              VALUES ($1, $2, $3, $4)`,
 			orderID, item.ProductID, item.Quantity, price)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
-		return 0, err
+	if idempotencyKey != "" {
+		_, err = r.pool.Exec(context.Background(),
+			"UPDATE idempotency_keys SET order_id = $1 WHERE key = $2",
+			orderID, idempotencyKey)
+		if err != nil {
+			return 0, false, err
+		}
 	}
-	return orderID, nil
+	return orderID, false, nil
 }
 
 func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
@@ -225,19 +242,6 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 
 	if err = tx.Commit(context.Background()); err != nil {
 		return 0, err
-	}
-
-	// инвалидируем кеш товаров
-	if r.invalidator != nil {
-		rows, _ := r.pool.Query(context.Background(),
-			"SELECT product_id FROM order_items WHERE order_id = $1", id)
-		defer rows.Close()
-		for rows.Next() {
-			var productID int
-			if err := rows.Scan(&productID); err == nil {
-				_ = r.invalidator.InvalidateByID(context.Background(), productID)
-			}
-		}
 	}
 
 	return cancelledID, nil

@@ -4,15 +4,18 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+
 	"order-service/internal/domain"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCancelOrder_InvalidTransitions(t *testing.T) {
 	tests := []struct {
-		name        string
-		status      string
-		expectErr   error
+		name      string
+		status    string
+		expectErr error
 	}{
 		{"delivered нельзя отменить", "delivered", domain.ErrInvalidStatusTransition},
 		{"shipped нельзя отменить", "shipped", domain.ErrInvalidStatusTransition},
@@ -25,7 +28,7 @@ func TestCancelOrder_InvalidTransitions(t *testing.T) {
 			repo.orders = []domain.Order{
 				{ID: 1, Status: tt.status},
 			}
-			svc := NewOrderService(repo)
+			svc := NewOrderService(repo, nil, zap.NewNop(), nil, nil)
 			_, err := svc.CancelOrder(context.Background(), 1)
 			assert.ErrorIs(t, err, tt.expectErr)
 		})
@@ -47,7 +50,7 @@ func TestCancelOrder_ValidTransitions(t *testing.T) {
 			repo.orders = []domain.Order{
 				{ID: 1, Status: tt.status},
 			}
-			svc := NewOrderService(repo)
+			svc := NewOrderService(repo, nil, zap.NewNop(), nil, nil)
 			_, err := svc.CancelOrder(context.Background(), 1)
 			assert.NoError(t, err)
 		})
@@ -68,7 +71,7 @@ func TestCanTransition(t *testing.T) {
 func TestCancelOrder_ConcurrentDouble(t *testing.T) {
 	repo := newMockRepo()
 	repo.orders = []domain.Order{{ID: 1, Status: "pending"}}
-	svc := NewOrderService(repo)
+	svc := NewOrderService(repo, nil, zap.NewNop(), nil, nil)
 	ctx := context.Background()
 
 	results := make(chan error, 2)

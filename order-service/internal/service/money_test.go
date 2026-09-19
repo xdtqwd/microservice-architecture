@@ -4,9 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"go.uber.org/zap"
+
+	"order-service/internal/domain"
+
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
-	"order-service/internal/domain"
 )
 
 // TestCreateOrder_PriceDecimalPrecision проверяет что цена в заказе
@@ -20,12 +23,12 @@ func TestCreateOrder_PriceDecimalPrecision(t *testing.T) {
 		Stock: 10,
 	})
 
-	svc := NewOrderService(repo)
+	svc := NewOrderService(repo, nil, zap.NewNop(), nil, nil)
 	ctx := context.Background()
 
-	_, err := svc.CreateOrder(ctx, []domain.CreateOrderItem{
+	_, _, err := svc.CreateOrder(ctx, []domain.CreateOrderItem{
 		{ProductID: 3, Quantity: 1},
-	})
+	}, "")
 	assert.NoError(t, err)
 
 	orders, _, err := svc.GetOrders(ctx, 10, nil)
