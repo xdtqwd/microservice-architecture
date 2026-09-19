@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"order-service/internal/domain"
+	"sort"
 	"time"
 
 	"github.com/shopspring/decimal"
