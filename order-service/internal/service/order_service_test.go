@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
-	"go.uber.org/zap"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+
 	"order-service/internal/domain"
+
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCreateOrder_Success(t *testing.T) {
@@ -175,4 +177,43 @@ func TestCreateOrder_IdempotencyParallel(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, len(ids), "должен создаться ровно один заказ")
+}
+
+func TestCreateOrder_InsufficientStock(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRepo()
+	svc := NewOrderService(repo, nil, zap.NewNop(), nil, nil)
+
+	// product ID=2 has Stock=0
+	items := []domain.CreateOrderItem{
+		{ProductID: 2, Quantity: 1},
+	}
+	_, _, err := svc.CreateOrder(ctx, items, "")
+	assert.ErrorIs(t, err, domain.ErrInsufficientStock)
+}
+
+func TestCreateOrder_PriceFromDB(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRepo()
+	svc := NewOrderService(repo, nil, zap.NewNop(), nil, nil)
+
+	items := []domain.CreateOrderItem{
+		{ProductID: 1, Quantity: 1},
+	}
+	id, _, err := svc.CreateOrder(ctx, items, "")
+	assert.NoError(t, err)
+
+	order, err := svc.GetOrderByID(ctx, id)
+	assert.NoError(t, err)
+	assert.Equal(t, decimal.NewFromInt(150000), order.Items[0].Price,
+		"цена должна браться из БД (мока), не от клиента")
+}
+
+func TestCancelOrder_NotFound(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRepo()
+	svc := NewOrderService(repo, nil, zap.NewNop(), nil, nil)
+
+	_, err := svc.CancelOrder(ctx, 999)
+	assert.ErrorIs(t, err, domain.ErrOrderNotFound)
 }

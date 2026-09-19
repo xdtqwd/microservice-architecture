@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
-	"go.uber.org/zap"
 	"testing"
+
+	"go.uber.org/zap"
+
+	"order-service/internal/domain"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
-	"order-service/internal/domain"
 )
 
 // TestCreateOrder_PriceDecimalPrecision проверяет что цена в заказе

@@ -2,8 +2,9 @@ package repository
 
 import (
 	"context"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"order-service/internal/txm"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type OrderRepo struct {

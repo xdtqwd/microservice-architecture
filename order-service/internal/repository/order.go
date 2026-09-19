@@ -5,8 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"order-service/internal/domain"
-	"github.com/shopspring/decimal"
 	"time"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/jackc/pgx/v5"
 )

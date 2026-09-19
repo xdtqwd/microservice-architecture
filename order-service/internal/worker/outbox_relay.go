@@ -65,12 +65,14 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 }
 
 func (r *OutboxRelay) updateLagMetric(ctx context.Context) {
-	var lagSeconds float64
+	var lagSeconds *float64
 	err := r.pool.QueryRow(ctx,
 		"SELECT EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) FROM outbox WHERE published_at IS NULL").
 		Scan(&lagSeconds)
-	if err == nil {
-		OutboxLagSeconds.Set(lagSeconds)
+	if err == nil && lagSeconds != nil {
+		OutboxLagSeconds.Set(*lagSeconds)
+	} else {
+		OutboxLagSeconds.Set(0)
 	}
 }
 

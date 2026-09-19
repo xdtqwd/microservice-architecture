@@ -1,0 +1,7 @@
+# <type>: <subject> (до 72 символов)
+# type: feat|fix|refactor|test|docs|ci|chore
+# Пример: feat: ORD-02 cancel returns stock in one transaction
+
+# Тело (зачем, а не что — необязательно, но полезно):
+
+# Closes #NN

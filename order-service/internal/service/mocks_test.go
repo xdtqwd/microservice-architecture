@@ -15,6 +15,7 @@ type mockRepo struct {
 	nextID          int
 	idempotencyKeys map[string]int
 	mu              sync.Mutex
+	dbCalls         int // счётчик обращений к репозиторию
 }
 
 func newMockRepo() *mockRepo {
@@ -40,11 +41,19 @@ func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, id
 	orderItems := make([]domain.OrderItem, len(items))
 	for i, item := range items {
 		price := decimal.NewFromInt(0)
+		found := false
 		for _, p := range m.products {
 			if p.ID == item.ProductID {
+				if p.Stock < item.Quantity {
+					return 0, false, domain.ErrInsufficientStock
+				}
 				price = p.Price
+				found = true
 				break
 			}
+		}
+		if !found {
+			return 0, false, domain.ErrProductNotFound
 		}
 		orderItems[i] = domain.OrderItem{
 			ProductID: item.ProductID,
@@ -103,6 +112,9 @@ func (m *mockRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
 }
 
 func (m *mockRepo) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
+	m.mu.Lock()
+	m.dbCalls++
+	m.mu.Unlock()
 	for _, p := range m.products {
 		if p.ID == id {
 			return &p, nil

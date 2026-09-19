@@ -14,18 +14,19 @@ test: ## Run unit tests
 test-integration: ## Run integration tests (requires DB)
 	DATABASE_URL=postgres://postgres:password@localhost:5436/orders_db go test -race -tags=integration ./...
 
+GOLANGCI_LINT_VERSION = v2.13.0
+
+install-lint: ## Install golangci-lint
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
 lint: ## Run linter
 	golangci-lint run
 
-migrate-up: ## Apply migrations
-	docker exec microservice-architecture-postgres-1 psql -U postgres -d orders_db \
-		-f /docker-entrypoint-initdb.d/01_init.sql || true
-	docker exec microservice-architecture-postgres-1 psql -U postgres -d orders_db \
-		-f /docker-entrypoint-initdb.d/02_schema_constraints.sql || true
+migrate-up: ## Apply migrations with goose
+	goose -dir migrations/goose postgres "$(DATABASE_URL)" up
 
-migrate-down: ## Drop all tables
-	docker exec microservice-architecture-postgres-1 psql -U postgres -d orders_db \
-		-c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+migrate-down: ## Rollback last migration
+	goose -dir migrations/goose postgres "$(DATABASE_URL)" down
 
 load-test: ## Run k6 load tests
 	k6 run ../load-tests/list_orders.js
@@ -47,7 +48,6 @@ coverage: ## Generate coverage report
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
 
-coverage-diff: ## Check coverage >= 80%
+coverage-diff: ## Check diff coverage >= 80%
 	go test -coverprofile=coverage.out ./...
-	@go tool cover -func=coverage.out | grep total | awk '{print $$3}' | \
-		tr -d '%' | awk '{if ($$1 < 80) {print "Coverage " $$1 "% < 80%"; exit 1} else {print "Coverage " $$1 "% OK"}}'
+	python3 scripts/coverage_diff.py

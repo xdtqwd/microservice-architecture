@@ -38,9 +38,9 @@ type OrderCursor struct {
 }
 
 var allowedTransitions = map[string][]string{
-	"pending":  {"paid", "cancelled"},
-	"paid":     {"shipped", "cancelled"},
-	"shipped":  {"delivered"},
+	"pending":   {"paid", "cancelled"},
+	"paid":      {"shipped", "cancelled"},
+	"shipped":   {"delivered"},
 	"delivered": {},
 	"cancelled": {},
 }

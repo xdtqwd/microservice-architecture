@@ -7,19 +7,21 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
+
 	"order-service/internal/kafka"
+	"order-service/internal/metrics"
 	"order-service/internal/repository"
-	"order-service/internal/worker"
-	"order-service/internal/txm"
 	"order-service/internal/service"
+	"order-service/internal/txm"
+	"order-service/internal/worker"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -59,7 +61,7 @@ func newHandler(
 	return handler.New(orderSvc, productSvc, logger)
 }
 
-func setupRoutes(h *handler.Handler) http.Handler {
+func setupRoutes(h *handler.Handler, health *handler.HealthHandler, logger *zap.Logger) http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/products", h.GetProducts).Methods("GET")
 	r.HandleFunc("/products/{id}", h.GetProductByID).Methods("GET")
@@ -68,17 +70,34 @@ func setupRoutes(h *handler.Handler) http.Handler {
 	r.HandleFunc("/orders/{id}", h.GetOrderByID).Methods("GET")
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
 	r.HandleFunc("/products/{id}/cache", h.InvalidateProductCache).Methods("DELETE")
+	r.HandleFunc("/healthz", health.Liveness)
+	r.HandleFunc("/readyz", health.Readiness)
 	r.Handle("/metrics", promhttp.Handler())
-	return r
+
+	chain := handler.RequestID(
+		handler.Logger(logger)(
+			handler.Recover(logger)(
+				handler.Timeout(10 * time.Second)(r),
+			),
+		),
+	)
+	return chain
 }
 
 func New(ctx context.Context, logger *zap.Logger) (*App, error) {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
 
-	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger)
+	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger, cfg.DBMaxConns, cfg.DBMinConns)
 	if err != nil {
 		return nil, err
 	}
+	if err := pool.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("postgres unavailable: %w", err)
+	}
+	logger.Info("postgres connected!")
 
 	redisCache := cache.New(cfg.RedisAddr)
 	if err := redisCache.Ping(ctx); err != nil {
@@ -92,7 +111,14 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 
 	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)
 	return &App{
-		server: &http.Server{Addr: cfg.Port, Handler: setupRoutes(h)},
+		server: &http.Server{
+			Addr:              cfg.Port,
+			Handler:           setupRoutes(h, handler.NewHealthHandler(pool, redisCache), logger),
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      15 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		},
 		logger: logger,
 		ctx:    ctx,
 		pool:   pool,
@@ -107,6 +133,22 @@ func (a *App) Run() error {
 	relayCtx, relayCancel := context.WithCancel(a.ctx)
 	defer relayCancel()
 	go a.relay.Run(relayCtx)
+
+	// метрики пула соединений
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-relayCtx.Done():
+				return
+			case <-ticker.C:
+				stat := a.pool.Stat()
+				metrics.DBPoolAcquired.Set(float64(stat.AcquiredConns()))
+				metrics.DBPoolIdle.Set(float64(stat.IdleConns()))
+			}
+		}
+	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

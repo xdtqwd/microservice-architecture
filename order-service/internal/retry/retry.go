@@ -5,9 +5,10 @@ import (
 	"math/rand"
 	"time"
 
+	"order-service/internal/metrics"
+
 	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/zap"
-	"order-service/internal/metrics"
 )
 
 const (

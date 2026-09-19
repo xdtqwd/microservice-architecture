@@ -35,11 +35,16 @@ func (t *queryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.T
 	)
 }
 
-func Connect(ctx context.Context, url string, logger *zap.Logger) (*pgxpool.Pool, error) {
-	config, err := pgxpool.ParseConfig(url)
+func Connect(ctx context.Context, url string, logger *zap.Logger, maxConns, minConns int32) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, err
 	}
-	config.ConnConfig.Tracer = &queryTracer{logger: logger}
-	return pgxpool.NewWithConfig(ctx, config)
+	cfg.ConnConfig.Tracer = &queryTracer{logger: logger}
+	cfg.MaxConns = maxConns
+	cfg.MinConns = minConns
+	cfg.MaxConnLifetime = 30 * time.Minute
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	cfg.ConnConfig.ConnectTimeout = 5 * time.Second
+	return pgxpool.NewWithConfig(ctx, cfg)
 }
