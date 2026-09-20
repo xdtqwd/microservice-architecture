@@ -7,8 +7,8 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
-	"order-service/internal/metrics"
 	"order-service/internal/kafka"
+	"order-service/internal/metrics"
 	"order-service/internal/repository"
 	"order-service/internal/service"
 	"order-service/internal/txm"
@@ -73,14 +73,8 @@ func setupRoutes(h *handler.Handler, health *handler.HealthHandler, logger *zap.
 	r.HandleFunc("/readyz", health.Readiness)
 	r.Handle("/metrics", promhttp.Handler())
 
-	chain := handler.RequestID(
-		handler.Logger(logger)(
-			handler.Recover(logger)(
-				handler.Timeout(10 * time.Second)(r),
-			),
-		),
-	)
-	return chain
+	r.Use(handler.LoggerMiddleware(logger))
+	return handler.RequestID(handler.Recover(logger)(handler.Timeout(10 * time.Second)(r)))
 }
 
 func New(ctx context.Context, logger *zap.Logger) (*App, error) {

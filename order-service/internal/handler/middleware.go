@@ -3,6 +3,8 @@ package handler
 import (
 	"context"
 	"net/http"
+
+	"github.com/gorilla/mux"
 	"runtime/debug"
 	"strconv"
 
@@ -26,6 +28,39 @@ func RequestID(next http.Handler) http.Handler {
 	})
 }
 
+// LoggerMiddleware — версия для gorilla/mux r.Use(), вызывается после матчинга маршрута
+func LoggerMiddleware(logger *zap.Logger) mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(rw, r)
+			dur := time.Since(start)
+			id, _ := r.Context().Value(requestIDKey).(string)
+			path := r.URL.Path
+			if route := mux.CurrentRoute(r); route != nil {
+				if tpl, err := route.GetPathTemplate(); err == nil {
+					path = tpl
+				}
+			} else {
+				path = "unknown"
+			}
+			logger.Info("request",
+				zap.String("request_id", id),
+				zap.String("method", r.Method),
+				zap.String("path", path),
+				zap.Int("status", rw.status),
+				zap.Duration("duration", dur),
+			)
+			metrics.HTTPDuration.WithLabelValues(
+				r.Method,
+				path,
+				strconv.Itoa(rw.status),
+			).Observe(dur.Seconds())
+		})
+	}
+}
+
 func Logger(logger *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,9 +76,17 @@ func Logger(logger *zap.Logger) func(http.Handler) http.Handler {
 				zap.Int("status", rw.status),
 				zap.Duration("duration", dur),
 			)
+			path := r.URL.Path
+			if route := mux.CurrentRoute(r); route != nil {
+				if tpl, err := route.GetPathTemplate(); err == nil {
+					path = tpl
+				}
+			} else {
+				path = "unknown"
+			}
 			metrics.HTTPDuration.WithLabelValues(
 				r.Method,
-				r.URL.Path,
+				path,
 				strconv.Itoa(rw.status),
 			).Observe(dur.Seconds())
 		})
