@@ -46,3 +46,7 @@ CREATE TABLE IF NOT EXISTS outbox_dlq (
     error        TEXT,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ВНИМАНИЕ: этот файл НЕ является источником правды для схемы.
+-- Используйте goose-миграции: order-service/migrations/goose/
+-- Этот файл оставлен как справочник и больше не монтируется в docker-entrypoint-initdb.d
