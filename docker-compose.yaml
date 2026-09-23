@@ -40,8 +40,12 @@ services:
       DATABASE_URL: postgres://postgres:password@postgres:5432/orders_db
       REDIS_ADDR: redis:6379
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
 
   kafka:
     image: mirror.gcr.io/apache/kafka:3.7.0
