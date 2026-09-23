@@ -3,3 +3,9 @@
 coverage.out
 coverage.html
 server
+
+# Go-бинарники: собираем в bin/ в каждом сервисе
+**/bin/
+# страховка для старых команд сборки без -o bin/
+/order-service/server
+/product-service/product-service
