@@ -21,6 +21,17 @@ services:
     ports:
       - "6379:6379"
 
+  migrate:
+    build:
+      context: ./order-service
+      dockerfile: migrate.dockerfile
+    environment:
+      GOOSE_DBSTRING: postgres://postgres:password@postgres:5432/orders_db?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   order-service:
     build: ./order-service
     ports:
