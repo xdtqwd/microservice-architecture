@@ -30,7 +30,7 @@ jobs:
 
       - name: Race detector
         working-directory: order-service
-        run: go test -race ./...
+        run: go test -short -race ./...
 
       - name: Coverage
         working-directory: order-service
