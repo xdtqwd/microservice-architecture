@@ -245,19 +245,42 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 		return 0, err
 	}
 
-	// возвращаем stock по всем позициям заказа
-	_, err = tx.Exec(ctx, `
+	// возвращаем stock по всем позициям заказа и запоминаем, какие товары тронули
+	rows, err := tx.Query(ctx, `
 		UPDATE products p
 		SET stock = stock + oi.quantity
 		FROM order_items oi
-		WHERE oi.order_id = $1 AND oi.product_id = p.id`,
+		WHERE oi.order_id = $1 AND oi.product_id = p.id
+		RETURNING p.id`,
 		id)
 	if err != nil {
+		return 0, err
+	}
+	var productIDs []int
+	for rows.Next() {
+		var pid int
+		if err := rows.Scan(&pid); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		productIDs = append(productIDs, pid)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
 		return 0, err
 	}
 
 	if err = tx.Commit(context.Background()); err != nil {
 		return 0, err
+	}
+
+	// сбрасываем кеш только после коммита: иначе читатель может успеть
+	// положить в кеш старое значение до того, как изменения станут видны
+	for _, pid := range productIDs {
+		if err := r.invalidator.InvalidateByID(context.Background(), pid); err != nil {
+			r.logger.Error("cache invalidation after cancel failed",
+				zap.Int("order_id", id), zap.Int("product_id", pid), zap.Error(err))
+		}
 	}
 
 	return cancelledID, nil
