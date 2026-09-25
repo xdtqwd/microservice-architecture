@@ -10,6 +10,7 @@ import (
 )
 
 type mockRepo struct {
+	lastLimit int // какой limit дошёл до репозитория
 	orders          []domain.Order
 	products        []domain.Product
 	nextID          int
@@ -80,6 +81,7 @@ func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, err
 }
 
 func (m *mockRepo) GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error) {
+	m.lastLimit = limit
 	if len(m.orders) == 0 {
 		return []domain.Order{}, nil, nil
 	}
