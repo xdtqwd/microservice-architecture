@@ -88,3 +88,18 @@ func (rw *responseWriter) WriteHeader(status int) {
 	rw.status = status
 	rw.ResponseWriter.WriteHeader(status)
 }
+
+// RequestTimeout — общий дедлайн запроса.
+const RequestTimeout = 10 * time.Second
+
+// Chain — цепочка middleware, которой обёрнут весь сервер.
+// Вынесена сюда, чтобы тесты проверяли ровно ту цепочку, что работает в проде.
+func Chain(logger *zap.Logger, next http.Handler) http.Handler {
+	return RequestID(
+		Logger(logger)(
+			Recover(logger)(
+				Timeout(RequestTimeout)(next),
+			),
+		),
+	)
+}

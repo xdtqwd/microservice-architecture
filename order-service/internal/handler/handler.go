@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"mime"
 	"net/http"
 	"order-service/internal/domain"
 	"strconv"
@@ -34,6 +36,12 @@ type CreateOrderRequest struct {
 	ProductID int `json:"product_id"`
 	Quantity  int `json:"quantity"`
 }
+
+const (
+	maxBodyBytes  = 1 << 16 // 64KB: 100 позиций по ~640 байт с запасом
+	maxOrderItems = 100
+	maxLimit      = 100
+)
 
 func New(orderSvc OrderService, productSvc ProductService, logger *zap.Logger) *Handler {
 	return &Handler{orderSvc: orderSvc, productSvc: productSvc, logger: logger}
@@ -74,18 +82,25 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
-	var reqs []CreateOrderRequest
-	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
-		if err.Error() == "http: request body too large" {
-			http.Error(w, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
-			return
-		}
-		writeError(w, h.logger, errors.New("invalid request body"))
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		writeError(w, h.logger, domain.ErrUnsupportedMediaType)
 		return
 	}
-	if len(reqs) == 0 || len(reqs) > 100 {
-		writeError(w, h.logger, errors.New("order must have 1 to 100 items"))
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	var reqs []CreateOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			_ = json.NewEncoder(w).Encode(errorResponse{Error: "request body too large"})
+			return
+		}
+		writeError(w, h.logger, fmt.Errorf("%w: malformed JSON body", domain.ErrInvalidRequest))
+		return
+	}
+	if len(reqs) == 0 || len(reqs) > maxOrderItems {
+		writeError(w, h.logger, fmt.Errorf("%w: order must have 1 to %d items", domain.ErrInvalidRequest, maxOrderItems))
 		return
 	}
 
@@ -115,7 +130,15 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	limit := 0 // 0 — сервис подставит значение по умолчанию
+	if s := r.URL.Query().Get("limit"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n <= 0 || n > maxLimit {
+			writeError(w, h.logger, fmt.Errorf("%w: limit must be 1..%d", domain.ErrInvalidRequest, maxLimit))
+			return
+		}
+		limit = n
+	}
 
 	// offset больше не поддерживается — возвращаем 400
 	if r.URL.Query().Get("offset") != "" {

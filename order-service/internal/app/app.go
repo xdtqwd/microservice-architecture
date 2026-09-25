@@ -74,14 +74,7 @@ func setupRoutes(h *handler.Handler, health *handler.HealthHandler, logger *zap.
 	r.HandleFunc("/readyz", health.Readiness)
 	r.Handle("/metrics", promhttp.Handler())
 
-	chain := handler.RequestID(
-		handler.Logger(logger)(
-			handler.Recover(logger)(
-				handler.Timeout(10 * time.Second)(r),
-			),
-		),
-	)
-	return chain
+	return handler.Chain(logger, r)
 }
 
 func New(ctx context.Context, logger *zap.Logger) (*App, error) {
