@@ -10,7 +10,7 @@ import (
 )
 
 type mockRepo struct {
-	lastLimit int // какой limit дошёл до репозитория
+	lastLimit       int // какой limit дошёл до репозитория
 	orders          []domain.Order
 	products        []domain.Product
 	nextID          int
