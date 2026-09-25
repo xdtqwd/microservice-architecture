@@ -15,6 +15,7 @@ import (
 	"github.com/pressly/goose/v3"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 	"go.uber.org/zap"
@@ -43,6 +44,8 @@ func run(m *testing.M) int {
 		tcpostgres.WithUsername("postgres"),
 		tcpostgres.WithPassword("postgres"),
 		tcpostgres.BasicWaitStrategies(),
+		// быстрее ловить дедлоки в тестах (по умолчанию 1s)
+		testcontainers.WithCmdArgs("-c", "deadlock_timeout=100ms"),
 	)
 	if err != nil {
 		fmt.Println("start postgres:", err)
