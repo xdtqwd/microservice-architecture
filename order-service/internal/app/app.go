@@ -87,7 +87,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 
-	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger, cfg.DBMaxConns, cfg.DBMinConns)
+	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger, repository.PoolConfig{MaxConns: cfg.DBMaxConns, MinConns: cfg.DBMinConns, AcquireTimeout: cfg.DBAcquireTimeout})
 	if err != nil {
 		return nil, err
 	}

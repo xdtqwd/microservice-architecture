@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"order-service/internal/repository"
 
@@ -23,6 +24,7 @@ import (
 
 var (
 	testPool      *pgxpool.Pool
+	testDSN       string
 	testRedisAddr string
 	testRedis     *goredis.Client
 )
@@ -69,6 +71,7 @@ func run(m *testing.M) int {
 	defer func() { _ = testRedis.Close() }()
 
 	dsn, err := pg.ConnectionString(ctx, "sslmode=disable")
+	testDSN = dsn
 	if err != nil {
 		fmt.Println("dsn:", err)
 		return 1
@@ -90,7 +93,7 @@ func run(m *testing.M) int {
 	_ = db.Close()
 
 	// через Connect, а не pgxpool.New — заодно проверяем настройки пула и трейсер
-	testPool, err = repository.Connect(ctx, dsn, zap.NewNop(), 5, 1)
+	testPool, err = repository.Connect(ctx, dsn, zap.NewNop(), repository.PoolConfig{MaxConns: 5, MinConns: 1, AcquireTimeout: time.Second})
 	if err != nil {
 		fmt.Println("pool:", err)
 		return 1

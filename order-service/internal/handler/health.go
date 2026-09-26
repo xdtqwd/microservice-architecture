@@ -27,16 +27,28 @@ func (h *HealthHandler) Liveness(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HealthHandler) Readiness(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-	defer cancel()
+	// Проверки параллельно и каждая со своим таймаутом: раньше они шли
+	// по очереди с общим дедлайном, и медленная база съедала всё время,
+	// после чего живой Redis тоже отчитывался как недоступный.
+	type result struct {
+		name string
+		err  error
+	}
+	checks := map[string]Pinger{"db": h.db, "cache": h.cache}
+	results := make(chan result, len(checks))
+	for name, p := range checks {
+		go func(name string, p Pinger) {
+			ctx, cancel := context.WithTimeout(r.Context(), readinessTimeout)
+			defer cancel()
+			results <- result{name, p.Ping(ctx)}
+		}(name, p)
+	}
 
 	errs := map[string]string{}
-
-	if err := h.db.Ping(ctx); err != nil {
-		errs["db"] = err.Error()
-	}
-	if err := h.cache.Ping(ctx); err != nil {
-		errs["cache"] = err.Error()
+	for range checks {
+		if res := <-results; res.err != nil {
+			errs[res.name] = res.err.Error()
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -48,3 +60,5 @@ func (h *HealthHandler) Readiness(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
+
+const readinessTimeout = 1500 * time.Millisecond
