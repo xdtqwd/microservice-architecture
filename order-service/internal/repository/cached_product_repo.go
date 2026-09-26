@@ -53,8 +53,10 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 		return &p, nil
 	}
 	if !errors.Is(err, cache.ErrCacheMiss) {
-		r.logger.Error("redis error", zap.Error(err))
-		return nil, err
+		// Redis недоступен — деградируем в базу. Ошибку не прячем:
+		// лог и метрика нужны, иначе падение кеша станет незаметным.
+		r.logger.Warn("redis unavailable, falling back to db", zap.String("key", key), zap.Error(err))
+		metrics.CacheErrors.WithLabelValues("l2", "get").Inc()
 	}
 
 	r.logger.Debug("cache miss", zap.String("key", key))
@@ -71,7 +73,8 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 			return nil, err
 		}
 		if err := r.cache.Set(context.Background(), key, product, productTTL); err != nil {
-			r.logger.Error("cache set error", zap.Error(err))
+			r.logger.Warn("cache set failed", zap.String("key", key), zap.Error(err))
+			metrics.CacheErrors.WithLabelValues("l2", "set").Inc()
 		}
 		return product, nil
 	})
@@ -91,7 +94,11 @@ func (r *CachedProductRepo) InvalidateByID(ctx context.Context, id int) error {
 	// но уже запущенный лидер всё равно запишет прочитанное до сброса.
 	// окно гонки остаётся узким — между Do и Set лидера
 	if err := r.cache.Delete(ctx, key); err != nil {
-		r.logger.Error("cache delete error", zap.Error(err))
+		// Глотаем, но это самое дорогое место: если Redis жив, а Delete не прошёл,
+		// старое значение отдаётся до истечения productTTL.
+		r.logger.Error("cache delete failed, stale value may be served until TTL",
+			zap.String("key", key), zap.Error(err))
+		metrics.CacheErrors.WithLabelValues("l2", "delete").Inc()
 	}
 	r.group.Forget(key)
 	return nil
