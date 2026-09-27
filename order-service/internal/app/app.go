@@ -159,7 +159,7 @@ func (a *App) Run() error {
 	<-quit
 	a.logger.Info("Shutting down...")
 
-	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(a.ctx, 12*time.Second) // > дедлайна запроса 10s
 	defer cancel()
 
 	if err := a.server.Shutdown(ctx); err != nil {
