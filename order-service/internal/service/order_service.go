@@ -8,6 +8,7 @@ import (
 	"order-service/internal/repository"
 	"order-service/internal/retry"
 	"order-service/internal/txm"
+	"time"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
@@ -31,21 +32,37 @@ func NewOrderService(repo OrderRepository, txm *txm.TxManager, logger *zap.Logge
 	return &OrderService{repo: repo, txm: txm, logger: logger, producer: producer, outbox: outbox}
 }
 
+// createLeaderTimeout — предел для лидера singleflight при создании заказа:
+// захват соединения (1s) + транзакция с ретраями. Меньше дедлайна запроса (10s).
+const createLeaderTimeout = 5 * time.Second
+
 func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
 	if idempotencyKey != "" {
 		type result struct {
 			id     int
 			exists bool
 		}
-		val, err, _ := s.group.Do(idempotencyKey, func() (interface{}, error) {
-			id, exists, err := s.createOrder(context.Background(), items, idempotencyKey)
+		// Лидер работает на Background, чтобы отмена одного клиента не убила
+		// создание заказа для всех, кто пришёл с тем же ключом. Но с пределом:
+		// «навсегда» держать транзакцию и соединение нельзя.
+		// DoChan + select: каждый ждущий уходит по своему дедлайну,
+		// а не висит, пока лидер не закончит.
+		ch := s.group.DoChan(idempotencyKey, func() (interface{}, error) {
+			leaderCtx, cancel := context.WithTimeout(context.Background(), createLeaderTimeout)
+			defer cancel()
+			id, exists, err := s.createOrder(leaderCtx, items, idempotencyKey)
 			return result{id, exists}, err
 		})
-		if err != nil {
-			return 0, false, err
+		select {
+		case <-ctx.Done():
+			return 0, false, ctx.Err()
+		case res := <-ch:
+			if res.Err != nil {
+				return 0, false, res.Err
+			}
+			r := res.Val.(result)
+			return r.id, r.exists, nil
 		}
-		r := val.(result)
-		return r.id, r.exists, nil
 	}
 	return s.createOrder(ctx, items, "")
 }

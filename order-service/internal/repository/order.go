@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"order-service/internal/domain"
+	"order-service/internal/txm"
 	"sort"
 	"time"
 
@@ -31,14 +32,14 @@ type OrderItem struct {
 
 func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, bool, error) {
 	if idempotencyKey != "" {
-		_, err := r.pool.Exec(context.Background(),
+		_, err := r.querier(ctx).Exec(ctx,
 			"INSERT INTO idempotency_keys (key, order_id) VALUES ($1, 0) ON CONFLICT (key) DO NOTHING",
 			idempotencyKey)
 		if err != nil {
 			return 0, false, err
 		}
 		var existingID int
-		err = r.pool.QueryRow(context.Background(),
+		err = r.querier(ctx).QueryRow(ctx,
 			"SELECT order_id FROM idempotency_keys WHERE key = $1",
 			idempotencyKey).Scan(&existingID)
 		if err == nil && existingID > 0 {
@@ -88,7 +89,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 	}
 
 	if idempotencyKey != "" {
-		_, err = r.pool.Exec(context.Background(),
+		_, err = r.querier(ctx).Exec(ctx,
 			"UPDATE idempotency_keys SET order_id = $1 WHERE key = $2",
 			orderID, idempotencyKey)
 		if err != nil {
@@ -96,9 +97,9 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 		}
 	}
 	// сбрасываем кеш товаров: остатки изменились.
-	// заказ уже закоммичен, поэтому сбой инвалидации только логируем —
-	// вернуть ошибку значило бы сказать клиенту, что заказа нет.
-	// контекст свой: запросный к этому моменту может быть уже отменён
+	// Сбой инвалидации только логируем: вернуть ошибку значило бы откатить
+	// заказ из-за кеша. Контекст свой — запросный может быть уже отменён;
+	// предел задают короткие таймауты клиента Redis (100ms).
 	invalidCtx := context.Background()
 	for _, item := range items {
 		if err := r.invalidator.InvalidateByID(invalidCtx, item.ProductID); err != nil {
@@ -220,7 +221,11 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
+	defer func() {
+		fctx, cancel := txm.Detached()
+		defer cancel()
+		_ = tx.Rollback(fctx)
+	}()
 
 	// проверяем статус внутри транзакции с блокировкой строки
 	var currentStatus string
@@ -270,7 +275,7 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 		return 0, err
 	}
 
-	if err = tx.Commit(context.Background()); err != nil {
+	if err = commitDetached(tx); err != nil {
 		return 0, err
 	}
 

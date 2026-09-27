@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"order-service/internal/txm"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -26,6 +27,10 @@ const (
 	retention       = 24 * time.Hour
 	cleanupInterval = time.Minute
 	cleanupBatch    = 5000
+
+	// предел на одну пачку: выборка + отправка в Kafka + отметка published_at.
+	// kafka-go по умолчанию ждёт запись до 10s, берём с запасом.
+	batchTimeout = 15 * time.Second
 )
 
 var OutboxLagSeconds = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -88,7 +93,9 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 
 		r.updateLagMetric(ctx)
 
-		n, err := r.processBatch(ctx)
+		bctx, cancel := context.WithTimeout(ctx, batchTimeout)
+		n, err := r.processBatch(bctx)
+		cancel()
 		switch {
 		case err != nil:
 			// не долбим лежащую Kafka: 0.5s, 1s, 2s ... до 30s
@@ -135,7 +142,11 @@ func (r *OutboxRelay) processBatch(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
+	defer func() {
+		fctx, cancel := txm.Detached()
+		defer cancel()
+		_ = tx.Rollback(fctx)
+	}()
 
 	rows, err := tx.Query(ctx, fmt.Sprintf(`
 		SELECT id, aggregate_id, event_type, payload
@@ -178,7 +189,7 @@ func (r *OutboxRelay) processBatch(ctx context.Context) (int, error) {
 		if _, err := tx.Exec(ctx, "UPDATE outbox SET published_at = NOW() WHERE id = ANY($1)", ids); err != nil {
 			return 0, err
 		}
-		return len(ids), tx.Commit(context.Background())
+		return len(ids), commitDetached(tx)
 	}
 
 	// kafka-go для пачки возвращает WriteErrors даже когда брокер лежит целиком —
@@ -218,7 +229,7 @@ func (r *OutboxRelay) processBatch(ctx context.Context) (int, error) {
 			return 0, err
 		}
 	}
-	if err := tx.Commit(context.Background()); err != nil {
+	if err := commitDetached(tx); err != nil {
 		return 0, err
 	}
 	if len(failed) > 0 {
@@ -242,7 +253,9 @@ func isPoison(err error) bool {
 // в outbox_dlq одним запросом. Раньше событие только копировалось и навсегда
 // оставалось в outbox с published_at IS NULL, держа метрику лага растущей.
 func (r *OutboxRelay) moveToDLQ(ids []int64, errMsg string) {
-	_, err := r.pool.Exec(context.Background(), `
+	dctx, cancel := txm.Detached()
+	defer cancel()
+	_, err := r.pool.Exec(dctx, `
 		WITH moved AS (
 			DELETE FROM outbox
 			WHERE id = ANY($2) AND retry_count >= $3
