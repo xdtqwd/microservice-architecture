@@ -96,7 +96,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	}
 	logger.Info("postgres connected!")
 
-	redisCache := cache.New(cfg.RedisAddr)
+	redisCache := cache.New(cfg.RedisAddr, cache.WithBreaker(cfg.RedisBreakerThreshold, cfg.RedisBreakerOpenFor))
 	if err := redisCache.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("redis connection failed: %w", err)
 	}
