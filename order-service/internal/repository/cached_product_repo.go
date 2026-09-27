@@ -57,7 +57,10 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 		metrics.CacheHits.WithLabelValues("l2").Inc()
 		return &p, nil
 	}
-	if !errors.Is(err, cache.ErrCacheMiss) {
+	if errors.Is(err, cache.ErrUnavailable) {
+		// предохранитель разомкнут: в Redis не ходили вовсе, штатный режим — без warn
+		metrics.CacheErrors.WithLabelValues("l2", "skipped").Inc()
+	} else if !errors.Is(err, cache.ErrCacheMiss) {
 		// Redis недоступен — деградируем в базу. Ошибку не прячем:
 		// лог и метрика нужны, иначе падение кеша станет незаметным.
 		r.logger.Warn("redis unavailable, falling back to db", zap.String("key", key), zap.Error(err))
@@ -87,7 +90,7 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 		if err != nil {
 			return nil, err
 		}
-		if err := r.cache.Set(dbCtx, key, product, productTTL); err != nil {
+		if err := r.cache.Set(dbCtx, key, product, productTTL); err != nil && !errors.Is(err, cache.ErrUnavailable) {
 			r.logger.Warn("cache set failed", zap.String("key", key), zap.Error(err))
 			metrics.CacheErrors.WithLabelValues("l2", "set").Inc()
 		}

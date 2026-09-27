@@ -8,12 +8,14 @@ import (
 )
 
 type Config struct {
-	DatabaseURL      string
-	Port             string
-	RedisAddr        string
-	DBMaxConns       int32
-	DBMinConns       int32
-	DBAcquireTimeout time.Duration
+	DatabaseURL           string
+	Port                  string
+	RedisAddr             string
+	DBMaxConns            int32
+	DBMinConns            int32
+	DBAcquireTimeout      time.Duration
+	RedisBreakerThreshold int
+	RedisBreakerOpenFor   time.Duration
 }
 
 func Load() (*Config, error) {
@@ -23,12 +25,14 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL:      dbURL,
-		Port:             getEnv("PORT", ":8083"),
-		RedisAddr:        getEnv("REDIS_ADDR", "localhost:6379"),
-		DBMaxConns:       int32(getInt("DB_MAX_CONNS", 10)),
-		DBMinConns:       int32(getInt("DB_MIN_CONNS", 2)),
-		DBAcquireTimeout: getDuration("DB_ACQUIRE_TIMEOUT", time.Second),
+		DatabaseURL:           dbURL,
+		Port:                  getEnv("PORT", ":8083"),
+		RedisAddr:             getEnv("REDIS_ADDR", "localhost:6379"),
+		DBMaxConns:            int32(getInt("DB_MAX_CONNS", 10)),
+		DBMinConns:            int32(getInt("DB_MIN_CONNS", 2)),
+		DBAcquireTimeout:      getDuration("DB_ACQUIRE_TIMEOUT", time.Second),
+		RedisBreakerThreshold: getInt("REDIS_BREAKER_THRESHOLD", 5),
+		RedisBreakerOpenFor:   getDuration("REDIS_BREAKER_OPEN_FOR", 5*time.Second),
 	}, nil
 }
 
