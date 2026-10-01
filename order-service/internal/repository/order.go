@@ -290,10 +290,3 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 
 	return cancelledID, nil
 }
-
-// MarkPaid — НАИВНО (PAY-01): без условия на текущий статус и без идемпотентности.
-// Исправляется дальше по блоку PAY.
-func (r *OrderRepo) MarkPaid(ctx context.Context, id int) error {
-	_, err := r.pool.Exec(ctx, "UPDATE orders SET status = 'paid' WHERE id = $1", id)
-	return err
-}

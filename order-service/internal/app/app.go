@@ -113,7 +113,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	payH := handler.NewPaymentHandler(service.NewPaymentService(orderRepo, provider, logger), logger)
+	payH := handler.NewPaymentHandler(service.NewPaymentService(repository.NewPaymentRepo(pool, logger), provider, logger), logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
 	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)
