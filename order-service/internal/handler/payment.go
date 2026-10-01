@@ -12,16 +12,22 @@ import (
 )
 
 type PaymentService interface {
-	Pay(ctx context.Context, orderID int) (string, error)
+	Pay(ctx context.Context, orderID int, key string) (string, error)
 }
 
 type PaymentHandler struct {
 	svc    PaymentService
+	idem   IdempotencyStore
 	logger *zap.Logger
 }
 
-func NewPaymentHandler(svc PaymentService, logger *zap.Logger) *PaymentHandler {
-	return &PaymentHandler{svc: svc, logger: logger}
+func NewPaymentHandler(svc PaymentService, idem IdempotencyStore, logger *zap.Logger) *PaymentHandler {
+	return &PaymentHandler{svc: svc, idem: idem, logger: logger}
+}
+
+// Handler — POST /orders/{id}/pay, обёрнутый в идемпотентность.
+func (h *PaymentHandler) Handler() http.Handler {
+	return Idempotent(h.idem, h.logger, http.HandlerFunc(h.Pay))
 }
 
 func (h *PaymentHandler) Pay(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +36,7 @@ func (h *PaymentHandler) Pay(w http.ResponseWriter, r *http.Request) {
 		writeError(w, h.logger, domain.ErrOrderNotFound)
 		return
 	}
-	chargeID, err := h.svc.Pay(r.Context(), id)
+	chargeID, err := h.svc.Pay(r.Context(), id, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		writeError(w, h.logger, err)
 		return

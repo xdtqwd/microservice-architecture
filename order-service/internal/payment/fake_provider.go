@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
@@ -51,11 +52,18 @@ func NewFakeProvider(ctx context.Context, pool *pgxpool.Pool, logger *zap.Logger
 	if err != nil {
 		return nil, fmt.Errorf("fake provider table: %w", err)
 	}
+	// провайдер сам дедуплицирует списания по ключу идемпотентности
+	if _, err := pool.Exec(ctx, `
+		ALTER TABLE fake_provider_charges ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+		CREATE UNIQUE INDEX IF NOT EXISTS fake_provider_charges_key ON fake_provider_charges (idempotency_key);`); err != nil {
+		return nil, fmt.Errorf("fake provider idempotency: %w", err)
+	}
 	return &FakeProvider{pool: pool, delay: delay, failRate: failRate, logger: logger}, nil
 }
 
-// Charge списывает amount. Возвращает id списания.
-func (p *FakeProvider) Charge(_ context.Context, orderID int, amount decimal.Decimal) (string, error) {
+// Charge списывает amount. Повтор с тем же key не списывает снова,
+// а возвращает результат первого вызова — как у настоящих провайдеров.
+func (p *FakeProvider) Charge(_ context.Context, key string, orderID int, amount decimal.Decimal) (string, error) {
 	time.Sleep(p.delay) // «сеть и банк»
 
 	// свой контекст: на стороне провайдера наш таймаут ничего не значит
@@ -67,10 +75,20 @@ func (p *FakeProvider) Charge(_ context.Context, orderID int, amount decimal.Dec
 		status = "declined"
 	}
 	var id int64
-	err := p.pool.QueryRow(ctx,
-		"INSERT INTO fake_provider_charges (order_id, amount, status) VALUES ($1, $2, $3) RETURNING id",
-		orderID, amount, status).Scan(&id)
-	if err != nil {
+	err := p.pool.QueryRow(ctx, `
+		INSERT INTO fake_provider_charges (order_id, amount, status, idempotency_key)
+		VALUES ($1, $2, $3, NULLIF($4, ''))
+		ON CONFLICT (idempotency_key) DO NOTHING
+		RETURNING id`, orderID, amount, status, key).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// повтор: отдаём исход первой попытки
+		if err := p.pool.QueryRow(ctx,
+			"SELECT id, status FROM fake_provider_charges WHERE idempotency_key = $1", key).Scan(&id, &status); err != nil {
+			return "", fmt.Errorf("provider internal error: %w", err)
+		}
+		p.logger.Info("provider: duplicate request, returning first result",
+			zap.String("key", key), zap.Int64("charge_id", id), zap.String("status", status))
+	} else if err != nil {
 		return "", fmt.Errorf("provider internal error: %w", err)
 	}
 	p.logger.Info("provider", zap.Int("order_id", orderID), zap.String("status", status),

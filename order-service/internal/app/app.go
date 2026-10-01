@@ -72,7 +72,7 @@ func setupRoutes(h *handler.Handler, health *handler.HealthHandler, pay *handler
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
 	r.HandleFunc("/healthz", health.Liveness)
 	r.HandleFunc("/readyz", health.Readiness)
-	r.HandleFunc("/orders/{id}/pay", pay.Pay).Methods("POST")
+	r.Handle("/orders/{id}/pay", pay.Handler()).Methods("POST")
 	r.Handle("/metrics", promhttp.Handler())
 
 	chain := handler.RequestID(
@@ -113,7 +113,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	payH := handler.NewPaymentHandler(service.NewPaymentService(repository.NewPaymentRepo(pool, logger), provider, logger), logger)
+	payH := handler.NewPaymentHandler(service.NewPaymentService(repository.NewPaymentRepo(pool, logger), provider, logger), repository.NewIdempotencyRepo(pool), logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
 	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)

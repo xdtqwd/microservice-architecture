@@ -108,7 +108,7 @@ func resetDB(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 	_, err := testPool.Exec(ctx,
-		`TRUNCATE orders, order_items, products, idempotency_keys, outbox, outbox_dlq
+		`TRUNCATE orders, order_items, products, idempotency_keys, outbox, outbox_dlq, payment_requests
 		 RESTART IDENTITY CASCADE`)
 	require.NoError(t, err)
 	require.NoError(t, testRedis.FlushAll(ctx).Err())

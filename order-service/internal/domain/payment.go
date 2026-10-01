@@ -45,3 +45,12 @@ func (s PaymentStatus) IsTerminal() bool {
 	next, ok := allowedPaymentTransitions[s]
 	return ok && len(next) == 0
 }
+
+// IdempotencyClaim — результат попытки занять ключ идемпотентности.
+type IdempotencyClaim struct {
+	Owner    bool // ключ наш — выполняем запрос
+	Mismatch bool // ключ уже использован с другим телом запроса
+	Busy     bool // запрос с этим ключом выполняется прямо сейчас
+	Code     int  // сохранённый ответ первой попытки
+	Body     []byte
+}
