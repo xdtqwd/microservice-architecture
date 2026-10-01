@@ -39,6 +39,8 @@ services:
       PAY_CRASH_AFTER_CHARGE: ${PAY_CRASH_AFTER_CHARGE:-0}
       PAY_STUCK_AFTER: ${PAY_STUCK_AFTER:-2m}
       PAY_EXPIRE_AFTER: ${PAY_EXPIRE_AFTER:-15m}
+      RECONCILE_EVERY: ${RECONCILE_EVERY:-1h}
+      RECONCILE_WINDOW: ${RECONCILE_WINDOW:-48h}
     # 5s пауза + до 12s на текущие запросы + запас
     stop_grace_period: 20s
     depends_on:

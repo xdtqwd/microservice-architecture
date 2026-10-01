@@ -8,6 +8,7 @@ import (
 	"order-service/internal/config"
 	"order-service/internal/handler"
 	"order-service/internal/payment"
+	"order-service/internal/reconciliation"
 
 	"order-service/internal/kafka"
 	"order-service/internal/metrics"
@@ -27,16 +28,18 @@ import (
 )
 
 type App struct {
-	server     *http.Server
-	logger     *zap.Logger
-	ctx        context.Context
-	pool       *pgxpool.Pool
-	cache      *cache.RedisCache
-	relay      *worker.OutboxRelay
-	refunds    *worker.RefundWorker
-	reconciler *worker.ReconcileWorker
-	health     *handler.HealthHandler
-	drainDelay time.Duration
+	server                  *http.Server
+	logger                  *zap.Logger
+	ctx                     context.Context
+	pool                    *pgxpool.Pool
+	cache                   *cache.RedisCache
+	relay                   *worker.OutboxRelay
+	refunds                 *worker.RefundWorker
+	reconciler              *worker.ReconcileWorker
+	recon                   *reconciliation.Job
+	reconEvery, reconWindow time.Duration
+	health                  *handler.HealthHandler
+	drainDelay              time.Duration
 }
 
 func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.ProductStorage) {
@@ -132,15 +135,18 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 			WriteTimeout:      15 * time.Second,
 			IdleTimeout:       60 * time.Second,
 		},
-		logger:     logger,
-		ctx:        ctx,
-		pool:       pool,
-		cache:      redisCache,
-		relay:      relay,
-		refunds:    refunds,
-		reconciler: reconciler,
-		health:     health,
-		drainDelay: cfg.ShutdownDrainDelay,
+		logger:      logger,
+		ctx:         ctx,
+		pool:        pool,
+		cache:       redisCache,
+		relay:       relay,
+		refunds:     refunds,
+		reconciler:  reconciler,
+		recon:       reconciliation.NewJob(pool, provider, repository.NewPaymentRepo(pool, logger), logger),
+		reconEvery:  cfg.ReconcileEvery,
+		reconWindow: cfg.ReconcileWindow,
+		health:      health,
+		drainDelay:  cfg.ShutdownDrainDelay,
 	}, nil
 }
 
@@ -152,6 +158,7 @@ func (a *App) Run() error {
 	go a.relay.Run(relayCtx)
 	go a.refunds.Run(relayCtx)
 	go a.reconciler.Run(relayCtx)
+	go a.recon.RunScheduled(relayCtx, a.reconEvery, a.reconWindow)
 
 	// метрики пула соединений
 	go func() {

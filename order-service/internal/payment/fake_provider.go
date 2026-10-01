@@ -188,3 +188,44 @@ func (p *FakeProvider) ChargeStatus(_ context.Context, key string) (ChargeStatus
 	}
 	return ChargeSucceeded, fmt.Sprintf("ch_%d", id), nil
 }
+
+// ProviderCharge — запись провайдера о списании, как в его выгрузке.
+type ProviderCharge struct {
+	Key       string
+	ChargeID  string
+	Amount    decimal.Decimal
+	Status    string // charged | declined | refunded
+	CreatedAt time.Time
+}
+
+// ListCharges — выгрузка списаний за период. У настоящих провайдеров это
+// API отчётов или файл сверки; здесь — его журнал.
+func (p *FakeProvider) ListCharges(ctx context.Context, from, to time.Time) ([]ProviderCharge, error) {
+	if p.isDown(ctx) {
+		return nil, ErrUnavailable
+	}
+	rows, err := p.pool.Query(ctx, `
+		SELECT c.id, COALESCE(c.idempotency_key, ''), c.amount, c.status, c.created_at,
+		       EXISTS (SELECT 1 FROM fake_provider_refunds r WHERE r.charge_id = 'ch_' || c.id)
+		FROM fake_provider_charges c
+		WHERE c.created_at >= $1 AND c.created_at < $2`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ProviderCharge
+	for rows.Next() {
+		var id int64
+		var c ProviderCharge
+		var refunded bool
+		if err := rows.Scan(&id, &c.Key, &c.Amount, &c.Status, &c.CreatedAt, &refunded); err != nil {
+			return nil, err
+		}
+		c.ChargeID = fmt.Sprintf("ch_%d", id)
+		if refunded && c.Status == "charged" {
+			c.Status = "refunded"
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
