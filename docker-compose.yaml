@@ -33,6 +33,9 @@ services:
       DB_ACQUIRE_TIMEOUT: ${DB_ACQUIRE_TIMEOUT:-1s}
       REDIS_BREAKER_THRESHOLD: ${REDIS_BREAKER_THRESHOLD:-5}
       REDIS_BREAKER_OPEN_FOR: ${REDIS_BREAKER_OPEN_FOR:-5s}
+      SHUTDOWN_DRAIN_DELAY: ${SHUTDOWN_DRAIN_DELAY:-5s}
+    # 5s пауза + до 12s на текущие запросы + запас
+    stop_grace_period: 20s
     depends_on:
       - postgres
       - redis
