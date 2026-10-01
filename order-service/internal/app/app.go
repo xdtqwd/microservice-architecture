@@ -7,6 +7,7 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
+	"order-service/internal/payment"
 
 	"order-service/internal/kafka"
 	"order-service/internal/metrics"
@@ -61,7 +62,7 @@ func newHandler(
 	return handler.New(orderSvc, productSvc, logger)
 }
 
-func setupRoutes(h *handler.Handler, health *handler.HealthHandler, logger *zap.Logger) http.Handler {
+func setupRoutes(h *handler.Handler, health *handler.HealthHandler, pay *handler.PaymentHandler, logger *zap.Logger) http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/products", h.GetProducts).Methods("GET")
 	r.HandleFunc("/products/{id}", h.GetProductByID).Methods("GET")
@@ -71,6 +72,7 @@ func setupRoutes(h *handler.Handler, health *handler.HealthHandler, logger *zap.
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
 	r.HandleFunc("/healthz", health.Liveness)
 	r.HandleFunc("/readyz", health.Readiness)
+	r.HandleFunc("/orders/{id}/pay", pay.Pay).Methods("POST")
 	r.Handle("/metrics", promhttp.Handler())
 
 	chain := handler.RequestID(
@@ -106,6 +108,12 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 
 	orderRepo, productRepo := newRepositories(pool, redisCache, logger)
 	orderSvc, productSvc := newServices(orderRepo, productRepo, pool, logger)
+
+	provider, err := payment.NewFakeProvider(ctx, pool, logger)
+	if err != nil {
+		return nil, err
+	}
+	payH := handler.NewPaymentHandler(service.NewPaymentService(orderRepo, provider, logger), logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
 	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)
@@ -113,7 +121,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	return &App{
 		server: &http.Server{
 			Addr:              cfg.Port,
-			Handler:           setupRoutes(h, health, logger),
+			Handler:           setupRoutes(h, health, payH, logger),
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       10 * time.Second,
 			WriteTimeout:      15 * time.Second,
