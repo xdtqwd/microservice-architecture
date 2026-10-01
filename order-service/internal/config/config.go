@@ -16,6 +16,7 @@ type Config struct {
 	DBAcquireTimeout      time.Duration
 	RedisBreakerThreshold int
 	RedisBreakerOpenFor   time.Duration
+	ShutdownDrainDelay    time.Duration
 }
 
 func Load() (*Config, error) {
@@ -33,6 +34,7 @@ func Load() (*Config, error) {
 		DBAcquireTimeout:      getDuration("DB_ACQUIRE_TIMEOUT", time.Second),
 		RedisBreakerThreshold: getInt("REDIS_BREAKER_THRESHOLD", 5),
 		RedisBreakerOpenFor:   getDuration("REDIS_BREAKER_OPEN_FOR", 5*time.Second),
+		ShutdownDrainDelay:    getDuration("SHUTDOWN_DRAIN_DELAY", 5*time.Second),
 	}, nil
 }
 

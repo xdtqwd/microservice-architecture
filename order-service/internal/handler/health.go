@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,53 +13,60 @@ type Pinger interface {
 }
 
 type HealthHandler struct {
-	db    Pinger
-	cache Pinger
+	db           Pinger
+	cache        Pinger
+	shuttingDown atomic.Bool
 }
 
 func NewHealthHandler(db Pinger, cache Pinger) *HealthHandler {
 	return &HealthHandler{db: db, cache: cache}
 }
 
+// SetShuttingDown переводит /readyz в 503 до закрытия порта.
+func (h *HealthHandler) SetShuttingDown() { h.shuttingDown.Store(true) }
+
+// readinessTimeout — проверка лёгкая (Ping), но с пределом:
+// readiness не должна сама становиться нагрузкой или висеть.
+const readinessTimeout = 1500 * time.Millisecond
+
+// Liveness — процесс жив и обрабатывает запросы. Никаких внешних зависимостей:
+// при лежащей базе перезапуск сервиса ничего не лечит, только добавляет рестартов.
 func (h *HealthHandler) Liveness(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// Readiness — готов ли принимать трафик прямо сейчас.
+// Решает только то, без чего работать нельзя: база.
+// Redis проверяется справочно: после FAIL-01 сервис без него работает,
+// и выкидывать инстанс из балансировки из-за кеша нельзя.
 func (h *HealthHandler) Readiness(w http.ResponseWriter, r *http.Request) {
-	// Проверки параллельно и каждая со своим таймаутом: раньше они шли
-	// по очереди с общим дедлайном, и медленная база съедала всё время,
-	// после чего живой Redis тоже отчитывался как недоступный.
-	type result struct {
-		name string
-		err  error
-	}
-	checks := map[string]Pinger{"db": h.db, "cache": h.cache}
-	results := make(chan result, len(checks))
-	for name, p := range checks {
-		go func(name string, p Pinger) {
-			ctx, cancel := context.WithTimeout(r.Context(), readinessTimeout)
-			defer cancel()
-			results <- result{name, p.Ping(ctx)}
-		}(name, p)
-	}
-
-	errs := map[string]string{}
-	for range checks {
-		if res := <-results; res.err != nil {
-			errs[res.name] = res.err.Error()
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if len(errs) > 0 {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{"status": "unavailable", "errors": errs})
+	if h.shuttingDown.Load() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "shutting_down"})
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	ctx, cancel := context.WithTimeout(r.Context(), readinessTimeout)
+	defer cancel()
+
+	cacheErr := make(chan error, 1)
+	go func() { cacheErr <- h.cache.Ping(ctx) }()
+	dbErr := h.db.Ping(ctx)
+
+	checks := map[string]string{"db": "ok", "cache": "ok"}
+	if err := <-cacheErr; err != nil {
+		checks["cache"] = "degraded: " + err.Error()
+	}
+
+	if dbErr != nil {
+		checks["db"] = dbErr.Error()
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "unavailable", "checks": checks})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "checks": checks})
 }
 
-const readinessTimeout = 1500 * time.Millisecond
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}

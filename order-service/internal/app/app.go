@@ -26,12 +26,14 @@ import (
 )
 
 type App struct {
-	server *http.Server
-	logger *zap.Logger
-	ctx    context.Context
-	pool   *pgxpool.Pool
-	cache  *cache.RedisCache
-	relay  *worker.OutboxRelay
+	server     *http.Server
+	logger     *zap.Logger
+	ctx        context.Context
+	pool       *pgxpool.Pool
+	cache      *cache.RedisCache
+	relay      *worker.OutboxRelay
+	health     *handler.HealthHandler
+	drainDelay time.Duration
 }
 
 func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.ProductStorage) {
@@ -107,20 +109,23 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	h := newHandler(orderSvc, productSvc, logger)
 
 	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)
+	health := handler.NewHealthHandler(pool, redisCache)
 	return &App{
 		server: &http.Server{
 			Addr:              cfg.Port,
-			Handler:           setupRoutes(h, handler.NewHealthHandler(pool, redisCache), logger),
+			Handler:           setupRoutes(h, health, logger),
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       10 * time.Second,
 			WriteTimeout:      15 * time.Second,
 			IdleTimeout:       60 * time.Second,
 		},
-		logger: logger,
-		ctx:    ctx,
-		pool:   pool,
-		cache:  redisCache,
-		relay:  relay,
+		logger:     logger,
+		ctx:        ctx,
+		pool:       pool,
+		cache:      redisCache,
+		relay:      relay,
+		health:     health,
+		drainDelay: cfg.ShutdownDrainDelay,
 	}, nil
 }
 
@@ -158,6 +163,14 @@ func (a *App) Run() error {
 
 	<-quit
 	a.logger.Info("Shutting down...")
+
+	// Сначала /readyz краснеет, и только потом закрываем порт.
+	// Балансировщик узнаёт об этом на следующей проверке и перестаёт слать
+	// новые запросы, а мы пока обслуживаем всё, что ещё приходит.
+	a.health.SetShuttingDown()
+	a.logger.Info("readiness off, draining before closing listener",
+		zap.Duration("delay", a.drainDelay))
+	time.Sleep(a.drainDelay)
 
 	ctx, cancel := context.WithTimeout(a.ctx, 12*time.Second) // > дедлайна запроса 10s
 	defer cancel()
