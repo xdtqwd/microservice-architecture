@@ -30,9 +30,51 @@ func rollbackDetached(tx pgx.Tx) {
 	_ = tx.Rollback(ctx)
 }
 
-// Start создаёт платёж в pending для заказа в pending.
-// Второй активный платёж отбивает уникальный индекс, а не проверка в коде.
+// PaymentInfo — состояние платежа, найденного или созданного по ключу.
+type PaymentInfo struct {
+	ID                int64
+	Amount            decimal.Decimal
+	Status            domain.PaymentStatus
+	ProviderPaymentID string
+}
+
+// Start создаёт платёж без ключа идемпотентности.
 func (r *PaymentRepo) Start(ctx context.Context, orderID int) (int64, decimal.Decimal, error) {
+	p, err := r.StartOrResume(ctx, orderID, "")
+	return p.ID, p.Amount, err
+}
+
+func (r *PaymentRepo) byKey(ctx context.Context, key string) (PaymentInfo, error) {
+	var p PaymentInfo
+	var status string
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, amount, status, COALESCE(provider_payment_id, '')
+		FROM payments WHERE idempotency_key = $1`, key).Scan(&p.ID, &p.Amount, &status, &p.ProviderPaymentID)
+	p.Status = domain.PaymentStatus(status)
+	return p, err
+}
+
+// StartOrResume возвращает платёж с этим ключом, если он уже есть
+// (повтор после сбоя), иначе создаёт новый в pending.
+// Второй активный платёж на заказ отбивает уникальный индекс, а не проверка в коде.
+func (r *PaymentRepo) StartOrResume(ctx context.Context, orderID int, key string) (PaymentInfo, error) {
+	if key != "" {
+		p, err := r.byKey(ctx, key)
+		if err == nil {
+			return p, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return PaymentInfo{}, err
+		}
+	}
+	id, amount, err := r.start(ctx, orderID, key)
+	if isUniqueViolation(err, "payments_idempotency_key") {
+		return r.byKey(ctx, key) // параллельный запрос с тем же ключом успел первым
+	}
+	return PaymentInfo{ID: id, Amount: amount, Status: domain.PaymentPending}, err
+}
+
+func (r *PaymentRepo) start(ctx context.Context, orderID int, key string) (int64, decimal.Decimal, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return 0, decimal.Zero, err
@@ -60,10 +102,13 @@ func (r *PaymentRepo) Start(ctx context.Context, orderID int) (int64, decimal.De
 
 	var id int64
 	err = tx.QueryRow(ctx,
-		"INSERT INTO payments (order_id, amount, status) VALUES ($1, $2, 'pending') RETURNING id",
-		orderID, amount).Scan(&id)
+		"INSERT INTO payments (order_id, amount, status, idempotency_key) VALUES ($1, $2, 'pending', NULLIF($3, '')) RETURNING id",
+		orderID, amount, key).Scan(&id)
 	if isUniqueViolation(err, "payments_one_active_per_order") {
 		return 0, decimal.Zero, domain.ErrPaymentAlreadyActive
+	}
+	if isUniqueViolation(err, "payments_idempotency_key") {
+		return 0, decimal.Zero, err
 	}
 	if err != nil {
 		return 0, decimal.Zero, err

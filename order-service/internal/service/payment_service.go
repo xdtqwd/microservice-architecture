@@ -8,6 +8,7 @@ import (
 
 	"order-service/internal/domain"
 	"order-service/internal/payment"
+	"order-service/internal/repository"
 	"order-service/internal/txm"
 
 	"github.com/shopspring/decimal"
@@ -15,12 +16,12 @@ import (
 )
 
 type PaymentStore interface {
-	Start(ctx context.Context, orderID int) (int64, decimal.Decimal, error)
+	StartOrResume(ctx context.Context, orderID int, key string) (repository.PaymentInfo, error)
 	Transition(ctx context.Context, paymentID int64, to domain.PaymentStatus, providerID, reason string) error
 }
 
 type PaymentProvider interface {
-	Charge(ctx context.Context, orderID int, amount decimal.Decimal) (string, error)
+	Charge(ctx context.Context, key string, orderID int, amount decimal.Decimal) (string, error)
 }
 
 type PaymentService struct {
@@ -40,13 +41,26 @@ func NewPaymentService(store PaymentStore, provider PaymentProvider, logger *zap
 	}
 }
 
-func (s *PaymentService) Pay(ctx context.Context, orderID int) (string, error) {
-	paymentID, amount, err := s.store.Start(ctx, orderID)
+func (s *PaymentService) Pay(ctx context.Context, orderID int, key string) (string, error) {
+	p, err := s.store.StartOrResume(ctx, orderID, key)
 	if err != nil {
 		return "", err
 	}
+	paymentID := p.ID
 
-	chargeID, err := s.provider.Charge(ctx, orderID, amount)
+	// повтор после сбоя: платёж с этим ключом уже завершён
+	switch p.Status {
+	case domain.PaymentSucceeded:
+		return p.ProviderPaymentID, nil
+	case domain.PaymentFailed:
+		return "", fmt.Errorf("%w: declined earlier", domain.ErrPaymentDeclined)
+	case domain.PaymentExpired, domain.PaymentRefunded:
+		return "", fmt.Errorf("%w: payment is %s", domain.ErrPaymentTransition, p.Status)
+	}
+
+	// pending: новый платёж или зависший после падения. Ключ уходит провайдеру —
+	// если он уже списывал по нему, вернёт тот же результат, а не спишет снова.
+	chargeID, err := s.provider.Charge(ctx, key, orderID, p.Amount)
 
 	// Результат внешнего действия записываем независимо от клиента:
 	// если он отключился, деньги всё равно списаны или отклонены.
