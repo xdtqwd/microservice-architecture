@@ -155,3 +155,36 @@ func (p *FakeProvider) Refund(_ context.Context, key, chargeID string, amount de
 		zap.String("amount", amount.String()), zap.Int64("refund_id", id))
 	return fmt.Sprintf("rf_%d", id), nil
 }
+
+// ChargeStatus — что провайдер знает о списании по ключу идемпотентности.
+type ChargeStatus string
+
+const (
+	ChargeNotFound  ChargeStatus = "not_found" // запрос до провайдера не доходил
+	ChargeSucceeded ChargeStatus = "charged"
+	ChargeDeclined  ChargeStatus = "declined"
+)
+
+// ChargeStatus — запрос статуса списания у провайдера. Именно у провайдера,
+// а не по нашим догадкам: деньги — его журнал, не наш.
+func (p *FakeProvider) ChargeStatus(_ context.Context, key string) (ChargeStatus, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if p.isDown(ctx) {
+		return "", "", ErrUnavailable
+	}
+	var id int64
+	var status string
+	err := p.pool.QueryRow(ctx,
+		"SELECT id, status FROM fake_provider_charges WHERE idempotency_key = $1", key).Scan(&id, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ChargeNotFound, "", nil
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("provider internal error: %w", err)
+	}
+	if status == "declined" {
+		return ChargeDeclined, "", nil
+	}
+	return ChargeSucceeded, fmt.Sprintf("ch_%d", id), nil
+}

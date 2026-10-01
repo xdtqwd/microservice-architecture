@@ -17,6 +17,8 @@ type Config struct {
 	RedisBreakerThreshold int
 	RedisBreakerOpenFor   time.Duration
 	ShutdownDrainDelay    time.Duration
+	PayStuckAfter         time.Duration
+	PayExpireAfter        time.Duration
 }
 
 func Load() (*Config, error) {
@@ -35,6 +37,8 @@ func Load() (*Config, error) {
 		RedisBreakerThreshold: getInt("REDIS_BREAKER_THRESHOLD", 5),
 		RedisBreakerOpenFor:   getDuration("REDIS_BREAKER_OPEN_FOR", 5*time.Second),
 		ShutdownDrainDelay:    getDuration("SHUTDOWN_DRAIN_DELAY", 5*time.Second),
+		PayStuckAfter:         getDuration("PAY_STUCK_AFTER", 2*time.Minute),
+		PayExpireAfter:        getDuration("PAY_EXPIRE_AFTER", 15*time.Minute),
 	}, nil
 }
 
