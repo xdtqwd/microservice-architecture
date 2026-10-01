@@ -26,6 +26,7 @@ var errToStatus = map[error]int{
 	domain.ErrPaymentAlreadyActive:    http.StatusConflict,
 	domain.ErrPaymentTransition:       http.StatusConflict,
 	domain.ErrPaymentNotFound:         http.StatusNotFound,
+	domain.ErrPaymentInProgress:       http.StatusConflict,
 	// не дождались соединения из пула или общий дедлайн запроса:
 	// сервис перегружен, но жив — клиенту стоит повторить позже
 	context.DeadlineExceeded: http.StatusServiceUnavailable,

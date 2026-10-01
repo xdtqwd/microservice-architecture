@@ -21,7 +21,10 @@ import (
 	"go.uber.org/zap"
 )
 
-var ErrDeclined = errors.New("payment declined by provider")
+var (
+	ErrDeclined    = errors.New("payment declined by provider")
+	ErrUnavailable = errors.New("provider unavailable")
+)
 
 type FakeProvider struct {
 	pool     *pgxpool.Pool
@@ -58,6 +61,23 @@ func NewFakeProvider(ctx context.Context, pool *pgxpool.Pool, logger *zap.Logger
 		CREATE UNIQUE INDEX IF NOT EXISTS fake_provider_charges_key ON fake_provider_charges (idempotency_key);`); err != nil {
 		return nil, fmt.Errorf("fake provider idempotency: %w", err)
 	}
+	// возвраты и переключатель доступности, который можно менять на лету:
+	// UPDATE fake_provider_settings SET down = true
+	if _, err := pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS fake_provider_refunds (
+			id              BIGSERIAL PRIMARY KEY,
+			idempotency_key TEXT UNIQUE NOT NULL,
+			charge_id       TEXT NOT NULL,
+			amount          NUMERIC(12,2) NOT NULL,
+			created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE TABLE IF NOT EXISTS fake_provider_settings (
+			id   INT PRIMARY KEY,
+			down BOOLEAN NOT NULL DEFAULT false
+		);
+		INSERT INTO fake_provider_settings (id) VALUES (1) ON CONFLICT DO NOTHING;`); err != nil {
+		return nil, fmt.Errorf("fake provider refunds: %w", err)
+	}
 	return &FakeProvider{pool: pool, delay: delay, failRate: failRate, logger: logger}, nil
 }
 
@@ -69,6 +89,9 @@ func (p *FakeProvider) Charge(_ context.Context, key string, orderID int, amount
 	// свой контекст: на стороне провайдера наш таймаут ничего не значит
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if p.isDown(ctx) {
+		return "", ErrUnavailable
+	}
 
 	status := "charged"
 	if rand.Float64() < p.failRate {
@@ -97,4 +120,38 @@ func (p *FakeProvider) Charge(_ context.Context, key string, orderID int, amount
 		return "", ErrDeclined
 	}
 	return fmt.Sprintf("ch_%d", id), nil
+}
+
+func (p *FakeProvider) isDown(ctx context.Context) bool {
+	var down bool
+	_ = p.pool.QueryRow(ctx, "SELECT down FROM fake_provider_settings WHERE id = 1").Scan(&down)
+	return down
+}
+
+// Refund возвращает amount по списанию chargeID. Повтор с тем же key
+// не возвращает деньги второй раз, а отдаёт результат первого вызова.
+func (p *FakeProvider) Refund(_ context.Context, key, chargeID string, amount decimal.Decimal) (string, error) {
+	time.Sleep(p.delay)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if p.isDown(ctx) {
+		return "", ErrUnavailable
+	}
+	var id int64
+	err := p.pool.QueryRow(ctx, `
+		INSERT INTO fake_provider_refunds (idempotency_key, charge_id, amount)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (idempotency_key) DO NOTHING
+		RETURNING id`, key, chargeID, amount).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if err := p.pool.QueryRow(ctx,
+			"SELECT id FROM fake_provider_refunds WHERE idempotency_key = $1", key).Scan(&id); err != nil {
+			return "", fmt.Errorf("provider internal error: %w", err)
+		}
+	} else if err != nil {
+		return "", fmt.Errorf("provider internal error: %w", err)
+	}
+	p.logger.Info("provider: refund", zap.String("key", key), zap.String("charge_id", chargeID),
+		zap.String("amount", amount.String()), zap.Int64("refund_id", id))
+	return fmt.Sprintf("rf_%d", id), nil
 }

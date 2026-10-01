@@ -241,6 +241,21 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 		return 0, fmt.Errorf("CancelOrder: %w", domain.ErrInvalidStatusTransition)
 	}
 
+	// Платёж начат, но исход неизвестен: деньги могли уже списать. Отменять
+	// сейчас нельзя — либо потеряем возврат, либо вернём несписанное.
+	// Клиент повторит отмену, когда платёж завершится.
+	if currentStatus == "pending" {
+		var inProgress bool
+		if err := tx.QueryRow(ctx,
+			"SELECT EXISTS (SELECT 1 FROM payments WHERE order_id = $1 AND status = 'pending')",
+			id).Scan(&inProgress); err != nil {
+			return 0, err
+		}
+		if inProgress {
+			return 0, domain.ErrPaymentInProgress
+		}
+	}
+
 	// меняем статус
 	var cancelledID int
 	err = tx.QueryRow(ctx,
@@ -248,6 +263,22 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 		"cancelled", id).Scan(&cancelledID)
 	if err != nil {
 		return 0, err
+	}
+
+	// Оплаченный заказ: записываем возврат денег в той же транзакции,
+	// что и возврат остатков, — либо оба, либо ничего.
+	// К провайдеру отсюда НЕ ходим: внешний вызов внутри транзакции держал бы
+	// блокировки строк заказа и товаров и соединение из пула всё время ответа
+	// провайдера (секунды, а при его сбое — до таймаута). К тому же откат базы
+	// не откатит списание у провайдера. Возврат отправит RefundWorker.
+	if currentStatus == "paid" {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO refunds (payment_id, amount, status)
+			SELECT id, amount, 'pending' FROM payments
+			WHERE order_id = $1 AND status = 'succeeded'
+			ON CONFLICT (payment_id) DO NOTHING`, id); err != nil {
+			return 0, err
+		}
 	}
 
 	// возвращаем stock по всем позициям заказа и запоминаем, какие товары тронули
