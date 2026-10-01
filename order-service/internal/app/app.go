@@ -33,6 +33,7 @@ type App struct {
 	pool       *pgxpool.Pool
 	cache      *cache.RedisCache
 	relay      *worker.OutboxRelay
+	refunds    *worker.RefundWorker
 	health     *handler.HealthHandler
 	drainDelay time.Duration
 }
@@ -113,6 +114,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	refunds := worker.NewRefundWorker(pool, provider, logger)
 	payH := handler.NewPaymentHandler(service.NewPaymentService(repository.NewPaymentRepo(pool, logger), provider, logger), repository.NewIdempotencyRepo(pool), logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
@@ -132,6 +134,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 		pool:       pool,
 		cache:      redisCache,
 		relay:      relay,
+		refunds:    refunds,
 		health:     health,
 		drainDelay: cfg.ShutdownDrainDelay,
 	}, nil
@@ -143,6 +146,7 @@ func (a *App) Run() error {
 	relayCtx, relayCancel := context.WithCancel(a.ctx)
 	defer relayCancel()
 	go a.relay.Run(relayCtx)
+	go a.refunds.Run(relayCtx)
 
 	// метрики пула соединений
 	go func() {

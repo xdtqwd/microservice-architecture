@@ -54,3 +54,7 @@ type IdempotencyClaim struct {
 	Code     int  // сохранённый ответ первой попытки
 	Body     []byte
 }
+
+// ErrPaymentInProgress — у заказа есть платёж с неизвестным исходом.
+// Отменять нельзя: не знаем, списаны ли деньги и нужен ли возврат.
+var ErrPaymentInProgress = errors.New("order has a payment in progress, retry later")
