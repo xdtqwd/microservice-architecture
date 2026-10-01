@@ -22,6 +22,7 @@ var errToStatus = map[error]int{
 	domain.ErrOrderAlreadyCancelled:   http.StatusConflict,
 	domain.ErrInvalidCursor:           http.StatusBadRequest,
 	domain.ErrOffsetNotSupported:      http.StatusBadRequest,
+	domain.ErrPaymentDeclined:         http.StatusPaymentRequired,
 	// не дождались соединения из пула или общий дедлайн запроса:
 	// сервис перегружен, но жив — клиенту стоит повторить позже
 	context.DeadlineExceeded: http.StatusServiceUnavailable,
