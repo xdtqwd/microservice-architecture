@@ -34,6 +34,7 @@ type App struct {
 	cache      *cache.RedisCache
 	relay      *worker.OutboxRelay
 	refunds    *worker.RefundWorker
+	reconciler *worker.ReconcileWorker
 	health     *handler.HealthHandler
 	drainDelay time.Duration
 }
@@ -115,6 +116,8 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 		return nil, err
 	}
 	refunds := worker.NewRefundWorker(pool, provider, logger)
+	reconciler := worker.NewReconcileWorker(pool, provider, repository.NewPaymentRepo(pool, logger), logger,
+		worker.WithReconcileTiming(cfg.PayStuckAfter, cfg.PayExpireAfter, 10*time.Second, 5*time.Minute, 10))
 	payH := handler.NewPaymentHandler(service.NewPaymentService(repository.NewPaymentRepo(pool, logger), provider, logger), repository.NewIdempotencyRepo(pool), logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
@@ -135,6 +138,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 		cache:      redisCache,
 		relay:      relay,
 		refunds:    refunds,
+		reconciler: reconciler,
 		health:     health,
 		drainDelay: cfg.ShutdownDrainDelay,
 	}, nil
@@ -147,6 +151,7 @@ func (a *App) Run() error {
 	defer relayCancel()
 	go a.relay.Run(relayCtx)
 	go a.refunds.Run(relayCtx)
+	go a.reconciler.Run(relayCtx)
 
 	// метрики пула соединений
 	go func() {
