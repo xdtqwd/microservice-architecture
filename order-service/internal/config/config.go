@@ -19,6 +19,8 @@ type Config struct {
 	ShutdownDrainDelay    time.Duration
 	PayStuckAfter         time.Duration
 	PayExpireAfter        time.Duration
+	ReconcileEvery        time.Duration
+	ReconcileWindow       time.Duration
 }
 
 func Load() (*Config, error) {
@@ -39,6 +41,8 @@ func Load() (*Config, error) {
 		ShutdownDrainDelay:    getDuration("SHUTDOWN_DRAIN_DELAY", 5*time.Second),
 		PayStuckAfter:         getDuration("PAY_STUCK_AFTER", 2*time.Minute),
 		PayExpireAfter:        getDuration("PAY_EXPIRE_AFTER", 15*time.Minute),
+		ReconcileEvery:        getDuration("RECONCILE_EVERY", time.Hour),
+		ReconcileWindow:       getDuration("RECONCILE_WINDOW", 48*time.Hour),
 	}, nil
 }
 
