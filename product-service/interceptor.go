@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,7 +37,12 @@ func observe(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler g
 		outcome = "abandoned"
 	}
 	rpcServerDeadline.WithLabelValues(info.FullMethod, outcome).Inc()
-	log.Printf("%s: client gone (%v), client budget %s, server worked %s, outcome %s",
-		info.FullMethod, ctx.Err(), budget, took, outcome)
+	logger.Warn("client gone",
+		"request_id", reqID(ctx),
+		"method", info.FullMethod,
+		"reason", ctx.Err().Error(),
+		"client_budget", budget,
+		"server_worked", took.String(),
+		"outcome", outcome)
 	return resp, err
 }

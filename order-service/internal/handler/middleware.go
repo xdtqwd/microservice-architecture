@@ -7,21 +7,17 @@ import (
 	"strconv"
 
 	"order-service/internal/metrics"
+	"order-service/internal/reqid"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
-type contextKey string
-
-const requestIDKey contextKey = "request_id"
-
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := uuid.New().String()
-		ctx := context.WithValue(r.Context(), requestIDKey, id)
-		w.Header().Set("X-Request-Id", id)
+		id := reqid.OrNew(r.Header.Get(reqid.Header))
+		ctx := reqid.With(r.Context(), id)
+		w.Header().Set(reqid.Header, id)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -32,7 +28,7 @@ func Logger(logger *zap.Logger) func(http.Handler) http.Handler {
 			start := time.Now()
 			rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rw, r)
-			id, _ := r.Context().Value(requestIDKey).(string)
+			id := reqid.From(r.Context())
 			dur := time.Since(start)
 			logger.Info("request",
 				zap.String("request_id", id),
@@ -55,7 +51,7 @@ func Recover(logger *zap.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if err := recover(); err != nil {
-					id, _ := r.Context().Value(requestIDKey).(string)
+					id := reqid.From(r.Context())
 					logger.Error("panic recovered",
 						zap.String("request_id", id),
 						zap.Any("error", err),

@@ -122,7 +122,11 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 			addr = "product-service:9090"
 		}
 		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithUnaryInterceptor(productclient.DeadlineMetrics))
+			grpc.WithChainUnaryInterceptor(
+				productclient.RequestIDPropagation,
+				productclient.ClientObserver(logger),
+				productclient.DeadlineMetrics,
+			))
 		if err != nil {
 			return nil, fmt.Errorf("catalog client: %w", err)
 		}
