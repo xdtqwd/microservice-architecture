@@ -26,6 +26,8 @@ services:
     ports:
       - "8083:8083"
     environment:
+      PRODUCT_CATALOG: ${PRODUCT_CATALOG:-grpc-cached}
+      PRODUCT_GRPC_ADDR: product-service:9090
       DATABASE_URL: postgres://postgres:password@postgres:5432/orders_db
       REDIS_ADDR: redis:6379
     depends_on:
@@ -51,8 +53,13 @@ services:
     build: ./product-service
     ports:
       - "8082:8082"
+      - "9091:9090"
+    environment:
+      DATABASE_URL: postgres://postgres:password@postgres:5432/orders_db
+      GRPC_ADDR: ":9090"
     depends_on:
       - kafka
+      - postgres
 
 volumes:
   pgdata:

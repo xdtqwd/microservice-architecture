@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"order-service/internal/domain"
 	"order-service/internal/kafka"
 	"order-service/internal/repository"
 	"order-service/internal/retry"
 	"order-service/internal/txm"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 )
@@ -18,7 +20,14 @@ const (
 	maxLimit     = 100
 )
 
+// ProductCatalog — источник цен. Сервису не важно, что за ним: gRPC, кеш
+// или своя таблица.
+type ProductCatalog interface {
+	Prices(ctx context.Context, ids []int) (map[int]decimal.Decimal, error)
+}
+
 type OrderService struct {
+	catalog  ProductCatalog
 	repo     OrderRepository
 	txm      *txm.TxManager
 	logger   *zap.Logger
@@ -29,6 +38,13 @@ type OrderService struct {
 
 func NewOrderService(repo OrderRepository, txm *txm.TxManager, logger *zap.Logger, producer *kafka.Producer, outbox *repository.OutboxRepo) *OrderService {
 	return &OrderService{repo: repo, txm: txm, logger: logger, producer: producer, outbox: outbox}
+}
+
+// WithCatalog подключает внешний каталог цен. Без него цена берётся
+// из своей таблицы products, как раньше.
+func (s *OrderService) WithCatalog(c ProductCatalog) *OrderService {
+	s.catalog = c
+	return s
 }
 
 func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
@@ -71,6 +87,26 @@ func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrd
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
 		})
+	}
+
+	// Цены — у владельца каталога, одним вызовом на весь заказ, до транзакции:
+	// сетевой вызов внутри транзакции держал бы блокировки строк всё время ответа.
+	if s.catalog != nil {
+		ids := make([]int, len(orderItems))
+		for i, it := range orderItems {
+			ids[i] = it.ProductID
+		}
+		prices, err := s.catalog.Prices(ctx, ids)
+		if err != nil {
+			return 0, false, err
+		}
+		for i := range orderItems {
+			price, ok := prices[orderItems[i].ProductID]
+			if !ok {
+				return 0, false, fmt.Errorf("%w: %d", domain.ErrProductNotFound, orderItems[i].ProductID)
+			}
+			orderItems[i].Price = price
+		}
 	}
 
 	var orderID int

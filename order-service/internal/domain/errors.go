@@ -15,3 +15,6 @@ var (
 	ErrInvalidCursor      = errors.New("invalid cursor")
 	ErrOffsetNotSupported = errors.New("offset is not supported, use after_id for pagination")
 )
+
+// ErrCatalogUnavailable — сервис товаров не ответил: заказ без цены не создаём.
+var ErrCatalogUnavailable = errors.New("product catalog unavailable")

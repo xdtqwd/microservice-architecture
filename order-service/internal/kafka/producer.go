@@ -18,6 +18,10 @@ func NewProducer(brokers []string) *Producer {
 			Addr:     kafkago.TCP(brokers...),
 			Topic:    "orders",
 			Balancer: &kafkago.LeastBytes{},
+			// По умолчанию writer копит пачку до 1 секунды, а WriteMessages
+			// синхронный — каждый заказ ждал эту секунду. Нам важна задержка,
+			// а не пачки: отправляем почти сразу.
+			BatchTimeout: 5 * time.Millisecond,
 		},
 	}
 }
