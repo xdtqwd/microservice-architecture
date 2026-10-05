@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Product struct {
@@ -30,6 +31,7 @@ func main() {
 	r.HandleFunc("/products", addProductHandler).Methods("POST")
 	r.HandleFunc("/products/{id}", getProductHandler).Methods("GET")
 	r.HandleFunc("/products/{id}", deleteProductHandler).Methods("DELETE")
+	r.Handle("/metrics", promhttp.Handler())
 	log.Println("Product service started on :8082")
 	log.Fatal(http.ListenAndServe(":8082", r))
 }

@@ -121,11 +121,12 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 		if addr == "" {
 			addr = "product-service:9090"
 		}
-		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithUnaryInterceptor(productclient.DeadlineMetrics))
 		if err != nil {
 			return nil, fmt.Errorf("catalog client: %w", err)
 		}
-		var catalog service.ProductCatalog = productclient.NewGRPCCatalog(conn, 500*time.Millisecond)
+		var catalog service.ProductCatalog = productclient.NewGRPCCatalog(conn, catalogTimeout())
 		if mode != "grpc" {
 			catalog = productclient.NewCachedCatalog(catalog, 10_000, 30*time.Second)
 		}
@@ -207,4 +208,12 @@ func (a *App) Run() error {
 	a.logger.Info("DB pool closed")
 
 	return nil
+}
+
+// catalogTimeout — потолок одного вызова каталога, CATALOG_TIMEOUT (по умолчанию 500ms).
+func catalogTimeout() time.Duration {
+	if d, err := time.ParseDuration(os.Getenv("CATALOG_TIMEOUT")); err == nil && d > 0 {
+		return d
+	}
+	return 500 * time.Millisecond
 }
