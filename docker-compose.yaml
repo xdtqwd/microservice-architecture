@@ -29,6 +29,7 @@ services:
       PRODUCT_CATALOG: ${PRODUCT_CATALOG:-grpc-cached}
       PRODUCT_GRPC_ADDR: product-service:9090
       CATALOG_TIMEOUT: ${CATALOG_TIMEOUT:-500ms}
+      CATALOG_MAX_STALE: ${CATALOG_MAX_STALE:-10m}
       DATABASE_URL: postgres://postgres:password@postgres:5432/orders_db
       REDIS_ADDR: redis:6379
     depends_on:

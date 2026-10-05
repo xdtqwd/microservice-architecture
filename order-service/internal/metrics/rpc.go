@@ -32,3 +32,11 @@ var (
 )
 
 func init() { prometheus.MustRegister(RPCClientRequests, RPCClientDuration) }
+
+// Сколько цен отдали из устаревшего кеша, пока каталог был недоступен.
+var CatalogStaleServed = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "catalog_stale_served_total",
+	Help: "Prices served from stale cache while the catalog was unavailable",
+})
+
+func init() { prometheus.MustRegister(CatalogStaleServed) }
