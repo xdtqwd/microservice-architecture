@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	"product-service/gen/productv1"
 
@@ -66,12 +67,29 @@ func (s *catalogServer) GetProducts(ctx context.Context, req *productv1.GetProdu
 	return resp, nil
 }
 
+// Демо-переключатели RPC-03: медленная база и сервер, глухой к отмене.
+var (
+	slowQuery, _ = time.ParseDuration(os.Getenv("CATALOG_SLOW_QUERY"))
+	ignoreCtx    = os.Getenv("CATALOG_IGNORE_CTX") == "1"
+)
+
 // load — один запрос на всю пачку, а не по товару за раз.
+// Запросы в базу идут с контекстом вызова: клиент ушёл — pgx отменяет
+// запрос в Postgres, и база не считает то, что никто не ждёт.
 func (s *catalogServer) load(ctx context.Context, ids []int64) ([]*productv1.Product, error) {
-	rows, err := s.pool.Query(ctx, "SELECT id, name, price, stock FROM products WHERE id = ANY($1)", ids)
+	qctx := ctx
+	if ignoreCtx {
+		qctx = context.Background() // демо: так делать нельзя
+	}
+	if slowQuery > 0 {
+		if _, err := s.pool.Exec(qctx, "SELECT pg_sleep($1)", slowQuery.Seconds()); err != nil {
+			return nil, ctxOrUnavailable(ctx, err)
+		}
+	}
+
+	rows, err := s.pool.Query(qctx, "SELECT id, name, price, stock FROM products WHERE id = ANY($1)", ids)
 	if err != nil {
-		log.Printf("catalog query: %v", err)
-		return nil, status.Error(codes.Unavailable, "catalog unavailable")
+		return nil, ctxOrUnavailable(ctx, err)
 	}
 	defer rows.Close()
 
@@ -117,7 +135,7 @@ func startGRPC() {
 	if err != nil {
 		log.Fatalf("grpc listen: %v", err)
 	}
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(grpc.UnaryInterceptor(observe))
 	productv1.RegisterProductServiceServer(srv, &catalogServer{pool: pool})
 	reflection.Register(srv) // чтобы можно было смотреть сервис через grpcurl
 
@@ -127,4 +145,15 @@ func startGRPC() {
 			log.Fatalf("grpc serve: %v", err)
 		}
 	}()
+}
+
+// ctxOrUnavailable: если клиент ушёл, честно отвечаем отменой или дедлайном,
+// а не «каталог недоступен» — иначе по метрикам не отличить сбой базы от
+// того, что запрос просто никто не ждал.
+func ctxOrUnavailable(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return status.FromContextError(ctx.Err()).Err()
+	}
+	log.Printf("catalog query: %v", err)
+	return status.Error(codes.Unavailable, "catalog unavailable")
 }

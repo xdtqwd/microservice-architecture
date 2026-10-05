@@ -8,6 +8,7 @@ import (
 
 	"order-service/internal/domain"
 	"order-service/internal/gen/productv1"
+	"order-service/internal/metrics"
 
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc"
@@ -19,10 +20,39 @@ import (
 type GRPCCatalog struct {
 	client  productv1.ProductServiceClient
 	timeout time.Duration
+	// reserve — сколько времени запросу нужно после ответа соседа:
+	// транзакция заказа и ответ клиенту. Его соседу не отдаём.
+	reserve time.Duration
+	// minCall — если на вызов остаётся меньше, не звоним вовсе:
+	// заведомо не успеем, только нагрузим соседа.
+	minCall time.Duration
 }
 
 func NewGRPCCatalog(conn grpc.ClientConnInterface, timeout time.Duration) *GRPCCatalog {
-	return &GRPCCatalog{client: productv1.NewProductServiceClient(conn), timeout: timeout}
+	return &GRPCCatalog{
+		client:  productv1.NewProductServiceClient(conn),
+		timeout: timeout,
+		reserve: 300 * time.Millisecond,
+		minCall: 20 * time.Millisecond,
+	}
+}
+
+// callTimeout — бюджет на вызов соседа: не больше своего таймаута
+// и не больше того, что осталось у запроса за вычетом резерва.
+func (c *GRPCCatalog) callTimeout(ctx context.Context) (time.Duration, error) {
+	t := c.timeout
+	if dl, ok := ctx.Deadline(); ok {
+		left := time.Until(dl) - c.reserve
+		if left < c.minCall {
+			metrics.RPCClientSkipped.WithLabelValues("GetProducts").Inc()
+			return 0, fmt.Errorf("%w: request budget exhausted (%s left)", domain.ErrCatalogUnavailable,
+				time.Until(dl).Round(time.Millisecond))
+		}
+		if left < t {
+			t = left
+		}
+	}
+	return t, nil
 }
 
 // Prices возвращает цены найденных товаров. Отсутствующих в ответе нет —
@@ -33,9 +63,13 @@ func (c *GRPCCatalog) Prices(ctx context.Context, ids []int) (map[int]decimal.De
 		return map[int]decimal.Decimal{}, nil
 	}
 
-	// Свой короткий таймаут: соседу отводим часть бюджета запроса (10s),
-	// а не весь — иначе один медленный сосед съест время на всё остальное.
-	cctx, cancel := context.WithTimeout(ctx, c.timeout)
+	// Соседу — часть бюджета запроса, а не весь: иначе медленный сосед
+	// съест время на всё остальное. Дедлайн уедет на сервер в grpc-timeout.
+	timeout, err := c.callTimeout(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	resp, err := c.client.GetProducts(cctx, req)
