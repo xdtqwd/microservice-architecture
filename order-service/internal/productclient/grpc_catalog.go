@@ -16,6 +16,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ErrBudgetExhausted — на вызов соседа не осталось времени. Это не отказ
+// соседа, предохранитель его не считает.
+var ErrBudgetExhausted = errors.New("request budget exhausted")
+
 // GRPCCatalog — цены из product-service, одним вызовом на весь заказ.
 type GRPCCatalog struct {
 	client  productv1.ProductServiceClient
@@ -45,7 +49,7 @@ func (c *GRPCCatalog) callTimeout(ctx context.Context) (time.Duration, error) {
 		left := time.Until(dl) - c.reserve
 		if left < c.minCall {
 			metrics.RPCClientSkipped.WithLabelValues("GetProducts").Inc()
-			return 0, fmt.Errorf("%w: request budget exhausted (%s left)", domain.ErrCatalogUnavailable,
+			return 0, fmt.Errorf("%w: %w (%s left)", domain.ErrCatalogUnavailable, ErrBudgetExhausted,
 				time.Until(dl).Round(time.Millisecond))
 		}
 		if left < t {

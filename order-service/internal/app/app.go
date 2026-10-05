@@ -122,6 +122,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 			addr = "product-service:9090"
 		}
 		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithDefaultServiceConfig(productclient.ServiceConfig),
 			grpc.WithChainUnaryInterceptor(
 				productclient.RequestIDPropagation,
 				productclient.ClientObserver(logger),
@@ -130,9 +131,13 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 		if err != nil {
 			return nil, fmt.Errorf("catalog client: %w", err)
 		}
-		var catalog service.ProductCatalog = productclient.NewGRPCCatalog(conn, catalogTimeout())
+		// кеш -> предохранитель -> gRPC с повторами. Кеш снаружи: он может отдать
+		// устаревшую цену и тогда, когда предохранитель разомкнут.
+		var catalog productclient.PriceSource = productclient.NewGRPCCatalog(conn, catalogTimeout())
+		catalog = productclient.NewBreakerCatalog(catalog, 5, 5*time.Second)
 		if mode != "grpc" {
-			catalog = productclient.NewCachedCatalog(catalog, 10_000, 30*time.Second)
+			catalog = productclient.NewCachedCatalog(catalog, 10_000, 30*time.Second).
+				WithMaxStale(envDuration("CATALOG_MAX_STALE", 10*time.Minute))
 		}
 		orderSvc.WithCatalog(catalog)
 		logger.Info("prices from product-service", zap.String("addr", addr), zap.String("mode", mode))
@@ -220,4 +225,11 @@ func catalogTimeout() time.Duration {
 		return d
 	}
 	return 500 * time.Millisecond
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	if d, err := time.ParseDuration(os.Getenv(key)); err == nil && d > 0 {
+		return d
+	}
+	return fallback
 }

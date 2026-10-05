@@ -98,6 +98,9 @@ func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrd
 		}
 		prices, err := s.catalog.Prices(ctx, ids)
 		if err != nil {
+			if errors.Is(err, domain.ErrCatalogUnavailable) {
+				s.logger.Warn("order rejected: catalog unavailable", zap.Error(err))
+			}
 			return 0, false, err
 		}
 		for i := range orderItems {
