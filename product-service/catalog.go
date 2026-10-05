@@ -135,7 +135,12 @@ func startGRPC() {
 	if err != nil {
 		log.Fatalf("grpc listen: %v", err)
 	}
-	srv := grpc.NewServer(grpc.UnaryInterceptor(observe))
+	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(
+		requestID,    // первым: id нужен всем, включая лог паники
+		accessLog,    // видит итоговый код, в том числе Internal после паники
+		recoverPanic, // паника -> Internal, процесс жив
+		observe,      // RPC-03: ушёл ли клиент раньше, чем сервер закончил
+	))
 	productv1.RegisterProductServiceServer(srv, &catalogServer{pool: pool})
 	reflection.Register(srv) // чтобы можно было смотреть сервис через grpcurl
 
