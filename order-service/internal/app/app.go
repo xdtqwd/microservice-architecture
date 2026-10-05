@@ -7,6 +7,7 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
+	"order-service/internal/productclient"
 
 	"order-service/internal/kafka"
 	"order-service/internal/metrics"
@@ -23,6 +24,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type App struct {
@@ -107,6 +110,30 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 
 	orderRepo, productRepo := newRepositories(pool, redisCache, logger)
 	orderSvc, productSvc := newServices(orderRepo, productRepo, pool, logger)
+
+	// Откуда брать цены: db — своя таблица (как раньше), grpc — product-service,
+	// grpc-cached — product-service с кешем (по умолчанию).
+	switch mode := os.Getenv("PRODUCT_CATALOG"); mode {
+	case "db":
+		logger.Info("prices from local products table")
+	case "grpc", "grpc-cached", "":
+		addr := os.Getenv("PRODUCT_GRPC_ADDR")
+		if addr == "" {
+			addr = "product-service:9090"
+		}
+		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return nil, fmt.Errorf("catalog client: %w", err)
+		}
+		var catalog service.ProductCatalog = productclient.NewGRPCCatalog(conn, 500*time.Millisecond)
+		if mode != "grpc" {
+			catalog = productclient.NewCachedCatalog(catalog, 10_000, 30*time.Second)
+		}
+		orderSvc.WithCatalog(catalog)
+		logger.Info("prices from product-service", zap.String("addr", addr), zap.String("mode", mode))
+	default:
+		return nil, fmt.Errorf("unknown PRODUCT_CATALOG %q", mode)
+	}
 	h := newHandler(orderSvc, productSvc, logger)
 
 	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)

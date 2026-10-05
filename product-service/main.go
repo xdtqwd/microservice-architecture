@@ -19,6 +19,7 @@ type Product struct {
 var products []Product
 
 func main() {
+	startGRPC()
 	inbox := NewInboxStore()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

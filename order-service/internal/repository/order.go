@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 
 	"github.com/jackc/pgx/v5"
@@ -61,11 +60,15 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 	})
 
 	for _, item := range items {
-		var price decimal.Decimal
-		err = q.QueryRow(ctx,
-			"SELECT price FROM products WHERE id = $1", item.ProductID).Scan(&price)
-		if err != nil {
-			return 0, false, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
+		// Цену передал сервис (из каталога product-service) — берём её.
+		// Иначе — из своей таблицы, как раньше.
+		price := item.Price
+		if price.IsZero() {
+			err = q.QueryRow(ctx,
+				"SELECT price FROM products WHERE id = $1", item.ProductID).Scan(&price)
+			if err != nil {
+				return 0, false, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
+			}
 		}
 
 		tag, err := q.Exec(ctx,
