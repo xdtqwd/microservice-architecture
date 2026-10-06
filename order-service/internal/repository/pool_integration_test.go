@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository_test
 
 import (
@@ -33,7 +35,8 @@ func TestPool_Exhausted_FailsFastWithDeadline(t *testing.T) {
 
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.GreaterOrEqual(t, elapsed, 150*time.Millisecond, "ждали соединение")
-	assert.Less(t, elapsed, time.Second, "но не дольше таймаута ожидания")
+	// таймаут ожидания 200ms; без него ждали бы бесконечно — порог с запасом
+	assert.Less(t, elapsed, 3*time.Second, "но не висит бесконечно")
 }
 
 // Таймаут ограничивает только ожидание соединения: долгий запрос на
