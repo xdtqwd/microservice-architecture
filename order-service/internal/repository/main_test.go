@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository_test
 
 import (
@@ -31,10 +33,6 @@ var (
 
 func TestMain(m *testing.M) {
 	flag.Parse()
-	if testing.Short() {
-		fmt.Println("skipping repository integration tests (-short)")
-		os.Exit(0)
-	}
 	os.Exit(run(m))
 }
 

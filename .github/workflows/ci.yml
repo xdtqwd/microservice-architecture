@@ -71,3 +71,24 @@ jobs:
         with:
           context: order-service
           push: false
+
+  # Интеграционные тесты на настоящих Postgres и Redis в контейнерах.
+  # Отдельный job: идут дольше и требуют Docker, быстрые проверки их не ждут.
+  integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: order-service/go.mod
+          cache-dependency-path: order-service/go.sum
+
+      - name: Integration tests (testcontainers)
+        working-directory: order-service
+        run: |
+          go test -tags=integration -race -count=1 \
+            -coverpkg=./internal/... -coverprofile=integration.out ./...
+          go tool cover -func=integration.out | tail -1

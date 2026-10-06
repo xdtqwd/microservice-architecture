@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository_test
 
 import (
@@ -31,7 +33,9 @@ func TestRedisDown_ReadFallsBackToDB(t *testing.T) {
 	require.NoError(t, err, "Redis лёг — это промах кеша, а не ошибка")
 	assert.Equal(t, 7, p.Stock, "данные пришли из базы")
 	assert.EqualValues(t, 1, base.calls.Load())
-	assert.Less(t, elapsed, 500*time.Millisecond, "недоступный кеш не должен тормозить запрос")
+	// без фикса запрос висел ~1.7s на ретраях go-redis; порог с запасом
+	// под -race и загруженный CI — проверяем «не висит», а не миллисекунды
+	assert.Less(t, elapsed, time.Second, "недоступный кеш не должен тормозить запрос")
 
 	assert.Greater(t, testutil.ToFloat64(metrics.CacheErrors.WithLabelValues("l2", "get")), getErrs,
 		"ошибка чтения видна в метрике")
