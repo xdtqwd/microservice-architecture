@@ -57,10 +57,7 @@ func (h *Handler) GetProducts(w http.ResponseWriter, r *http.Request) {
 	for i, p := range products {
 		responses[i] = productToResponse(&p)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(responses); err != nil {
-		writeError(w, h.logger, err)
-	}
+	respond(w, h.logger, http.StatusOK, responses)
 }
 
 func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
@@ -75,10 +72,7 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, h.logger, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(productToResponse(product)); err != nil {
-		writeError(w, h.logger, err)
-	}
+	respond(w, h.logger, http.StatusOK, productToResponse(product))
 }
 
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
@@ -118,15 +112,11 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, h.logger, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	status := http.StatusCreated
 	if exists {
-		w.WriteHeader(http.StatusOK)
-	} else {
-		w.WriteHeader(http.StatusCreated)
+		status = http.StatusOK // повтор с тем же ключом идемпотентности
 	}
-	if err := json.NewEncoder(w).Encode(map[string]int{"id": orderID}); err != nil {
-		writeError(w, h.logger, err)
-	}
+	respond(w, h.logger, status, map[string]int{"id": orderID})
 }
 
 func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
@@ -172,10 +162,7 @@ func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 	if nextCursor != nil {
 		resp.NextAfterID = &nextCursor.AfterID
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		writeError(w, h.logger, err)
-	}
+	respond(w, h.logger, http.StatusOK, resp)
 }
 
 func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
@@ -189,10 +176,7 @@ func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, h.logger, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(orderToResponse(order)); err != nil {
-		writeError(w, h.logger, err)
-	}
+	respond(w, h.logger, http.StatusOK, orderToResponse(order))
 }
 
 func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
@@ -206,8 +190,5 @@ func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, h.logger, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]int{"cancelled_id": cancelledID}); err != nil {
-		writeError(w, h.logger, err)
-	}
+	respond(w, h.logger, http.StatusOK, map[string]int{"cancelled_id": cancelledID})
 }
