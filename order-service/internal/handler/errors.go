@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"order-service/internal/domain"
 
@@ -47,4 +49,20 @@ func writeError(w http.ResponseWriter, logger *zap.Logger, err error) {
 		msg = err.Error()
 	}
 	_ = json.NewEncoder(w).Encode(errorResponse{Error: msg})
+}
+
+// respond отправляет успешный ответ. Тело кодируется в буфер ДО заголовков:
+// ошибка кодирования ещё может стать честным 500. Если же упала запись,
+// заголовки уже ушли — исправить ответ нельзя, только записать в лог (FIX-03).
+func respond(w http.ResponseWriter, logger *zap.Logger, status int, v any) {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(v); err != nil {
+		writeError(w, logger, fmt.Errorf("encode response: %w", err))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		logger.Warn("write response failed, client likely gone", zap.Error(err))
+	}
 }
