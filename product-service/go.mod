@@ -1,6 +1,6 @@
 module product-service
 
-go 1.26.8
+go 1.26.9
 
 require (
 	github.com/gorilla/mux v1.8.1

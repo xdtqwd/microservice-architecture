@@ -29,10 +29,12 @@ var errToStatus = map[error]int{
 
 func writeError(w http.ResponseWriter, logger *zap.Logger, err error) {
 	status := http.StatusInternalServerError
+	var matched error
 
 	for domainErr, code := range errToStatus {
 		if errors.Is(err, domainErr) {
 			status = code
+			matched = domainErr
 			break
 		}
 	}
@@ -44,9 +46,16 @@ func writeError(w http.ResponseWriter, logger *zap.Logger, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
+	// Наружу — только публичный текст: текст доменной ошибки или пояснение
+	// к невалидному вводу. Цепочка обёрток с именами функций — только в лог:
+	// это деталь реализации, а не часть API.
 	msg := http.StatusText(status)
-	if status != http.StatusInternalServerError {
-		msg = err.Error()
+	if status < http.StatusInternalServerError && matched != nil {
+		msg = matched.Error()
+		var ve *domain.ValidationError
+		if errors.As(err, &ve) {
+			msg = ve.Error()
+		}
 	}
 	_ = json.NewEncoder(w).Encode(errorResponse{Error: msg})
 }

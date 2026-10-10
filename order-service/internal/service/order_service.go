@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"order-service/internal/domain"
 	"order-service/internal/kafka"
 	"order-service/internal/repository"
@@ -52,7 +51,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, items []domain.CreateOrd
 
 func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrderItem, idempotencyKey string) (int, bool, error) {
 	if len(items) == 0 {
-		return 0, false, errors.New("order must have at least one item")
+		return 0, false, domain.Invalid("order must have at least one item")
 	}
 
 	seen := make(map[int]bool)
@@ -60,10 +59,10 @@ func (s *OrderService) createOrder(ctx context.Context, items []domain.CreateOrd
 
 	for _, item := range items {
 		if item.Quantity <= 0 {
-			return 0, false, errors.New("quantity must be greater than 0")
+			return 0, false, domain.Invalid("quantity must be greater than 0")
 		}
 		if seen[item.ProductID] {
-			return 0, false, errors.New("duplicate product_id")
+			return 0, false, domain.Invalid("duplicate product_id")
 		}
 		seen[item.ProductID] = true
 

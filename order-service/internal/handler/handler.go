@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"mime"
 	"net/http"
 	"order-service/internal/domain"
@@ -64,7 +63,7 @@ func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		writeError(w, h.logger, domain.ErrProductNotFound)
+		writeError(w, h.logger, domain.Invalid("id must be a number"))
 		return
 	}
 	product, err := h.productSvc.GetProductByID(ctx, id)
@@ -90,11 +89,11 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 			_ = json.NewEncoder(w).Encode(errorResponse{Error: "request body too large"})
 			return
 		}
-		writeError(w, h.logger, fmt.Errorf("%w: malformed JSON body", domain.ErrInvalidRequest))
+		writeError(w, h.logger, domain.Invalid("malformed JSON body"))
 		return
 	}
 	if len(reqs) == 0 || len(reqs) > maxOrderItems {
-		writeError(w, h.logger, fmt.Errorf("%w: order must have 1 to %d items", domain.ErrInvalidRequest, maxOrderItems))
+		writeError(w, h.logger, domain.Invalid("order must have 1 to %d items", maxOrderItems))
 		return
 	}
 
@@ -124,7 +123,7 @@ func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 	if s := r.URL.Query().Get("limit"); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n <= 0 || n > maxLimit {
-			writeError(w, h.logger, fmt.Errorf("%w: limit must be 1..%d", domain.ErrInvalidRequest, maxLimit))
+			writeError(w, h.logger, domain.Invalid("limit must be 1..%d", maxLimit))
 			return
 		}
 		limit = n
@@ -168,7 +167,7 @@ func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		writeError(w, h.logger, domain.ErrOrderNotFound)
+		writeError(w, h.logger, domain.Invalid("id must be a number"))
 		return
 	}
 	order, err := h.orderSvc.GetOrderByID(r.Context(), id)
@@ -182,7 +181,7 @@ func (h *Handler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		writeError(w, h.logger, domain.ErrOrderNotFound)
+		writeError(w, h.logger, domain.Invalid("id must be a number"))
 		return
 	}
 	cancelledID, err := h.orderSvc.CancelOrder(r.Context(), id)
