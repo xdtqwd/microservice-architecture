@@ -64,8 +64,14 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 		var price decimal.Decimal
 		err = q.QueryRow(ctx,
 			"SELECT price FROM products WHERE id = $1", item.ProductID).Scan(&price)
-		if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, false, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
+		}
+		if err != nil {
+			// Не подменяем: таймаут, обрыв соединения, ошибка чтения колонки —
+			// это сбой сервиса (500), а не «товара нет» (404). Исходная ошибка
+			// нужна в логе, иначе сбой базы невидим.
+			return 0, false, fmt.Errorf("CreateOrder get price for product %d: %w", item.ProductID, err)
 		}
 
 		tag, err := q.Exec(ctx,
@@ -226,8 +232,11 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 	var currentStatus string
 	err = tx.QueryRow(ctx,
 		"SELECT status FROM orders WHERE id = $1 FOR UPDATE", id).Scan(&currentStatus)
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, fmt.Errorf("CancelOrder: %w", domain.ErrOrderNotFound)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("CancelOrder lock order %d: %w", id, err)
 	}
 	if !domain.CanTransition(currentStatus, "cancelled") {
 		if currentStatus == "cancelled" {
