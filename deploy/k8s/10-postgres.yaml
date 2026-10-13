@@ -1,0 +1,37 @@
+# Только для разработки: данные в emptyDir и пропадут вместе с подом.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: orders
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - {name: POSTGRES_PASSWORD, value: password}
+            - {name: POSTGRES_DB, value: orders_db}
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: orders
+spec:
+  selector: {app: postgres}
+  ports:
+    - port: 5432
