@@ -22,6 +22,12 @@ spec:
             - {name: POSTGRES_DB, value: orders_db}
           ports:
             - containerPort: 5432
+          # без пробы Postgres «готов», едва запустился процесс — ещё до приёма соединений
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "orders_db"]
+            periodSeconds: 2
+            failureThreshold: 3
           volumeMounts:
             - {name: data, mountPath: /var/lib/postgresql/data}
       volumes:
