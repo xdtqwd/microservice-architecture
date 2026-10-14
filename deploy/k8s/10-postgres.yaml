@@ -16,7 +16,9 @@ spec:
         - name: postgres
           image: postgres:15-alpine
           env:
-            - {name: POSTGRES_PASSWORD, value: password}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: order-service-secrets, key: POSTGRES_PASSWORD}
             - {name: POSTGRES_DB, value: orders_db}
           ports:
             - containerPort: 5432
