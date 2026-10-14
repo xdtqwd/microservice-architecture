@@ -5,6 +5,11 @@
     kind create cluster --name orders
     docker build -t order-service:dev ./order-service
     kind load docker-image order-service:dev --name orders
+    # секреты в git не хранятся — создаются командой
+    kubectl -n orders create secret generic order-service-secrets \
+      --from-literal=POSTGRES_PASSWORD=password \
+      --from-literal=DATABASE_URL='postgres://postgres:password@postgres:5432/orders_db?sslmode=disable' \
+      --dry-run=client -o yaml | kubectl apply -f -
     kubectl apply -f deploy/k8s/
 
     # миграции (в K8S-04 станут отдельным Job)
@@ -60,3 +65,19 @@ Postgres, Redis и Kafka здесь только для разработки: Po
 
 Осталось открытым: /readyz проверяет Ping, но не схему — на пустой базе
 под «готов», а заказы падают. Решается в K8S-04 миграциями до приёма трафика.
+
+## K8S-03: конфиг и секреты
+
+- ConfigMap order-service-config — несекретные настройки, в git
+- Secret order-service-secrets — пароль и строка подключения, создаётся
+  командой, в git не хранится
+
+Secret — это не шифрование: значения лежат в base64,
+`kubectl get secret ... | base64 -d` возвращает пароль одной командой.
+Защищает он только от случайного чтения: не виден в описании пода,
+права на чтение выдаются отдельно через RBAC. По умолчанию etcd хранит
+секреты открытым текстом. Настоящая защита — шифрование etcd, RBAC и
+внешнее хранилище секретов (Vault и аналоги).
+
+Ограничение переменных окружения: сервис читает их только на старте.
+Изменили ConfigMap — нужен `kubectl rollout restart deploy/order-service`.
