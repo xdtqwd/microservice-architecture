@@ -9,6 +9,7 @@ import (
 	"order-service/internal/handler"
 	"order-service/internal/payment"
 	"order-service/internal/reconciliation"
+	"order-service/migrations"
 
 	"order-service/internal/kafka"
 	"order-service/internal/metrics"
@@ -125,7 +126,12 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	h := newHandler(orderSvc, productSvc, logger)
 
 	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)
-	health := handler.NewHealthHandler(pool, redisCache)
+	// готовность — не просто «база отвечает», а «схема той версии, что нужна образу»
+	schemaVersion, err := migrations.Latest()
+	if err != nil {
+		return nil, fmt.Errorf("embedded migrations: %w", err)
+	}
+	health := handler.NewHealthHandler(repository.NewSchemaPinger(pool, schemaVersion), redisCache)
 	return &App{
 		server: &http.Server{
 			Addr:              cfg.Port,

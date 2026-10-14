@@ -81,3 +81,35 @@ Secret — это не шифрование: значения лежат в base
 
 Ограничение переменных окружения: сервис читает их только на старте.
 Изменили ConfigMap — нужен `kubectl rollout restart deploy/order-service`.
+
+## K8S-04: миграции
+
+Сначала сломано: миграции в init-контейнере каждого пода, 3 реплики разом
+на пустую базу. Все три пришли в одну миллисекунду, все увидели, что таблицы
+версий goose нет, и все бросились её создавать: один успел, двое упали с
+`duplicate key ... goose_db_version already exists`. При постепенном
+обновлении Deployment гонку не видно — поды сменяются по очереди, —
+она проявляется при масштабировании с нуля или потере узла.
+
+Стало:
+- миграции — один Job на выкладку (`30-migrate-job.yaml`, образ
+  `order-service/migrate.dockerfile`)
+- /readyz проверяет не только Ping, но и версию схемы: сервис знает нужную
+  версию из встроенных в бинарник миграций (`migrations.Latest`)
+- порядок запуска больше не важен: поды без схемы — 0/1, трафика нет;
+  после Job все становятся 1/1 сами
+
+| | Было | Стало |
+|---|---|---|
+| пустая база | под 1/1, заказы падают с 500 | под 0/1, `schema not migrated` |
+| 3 пода разом | гонка, 2 из 3 падают | одна попытка в Job |
+
+Попутно: у Postgres не было пробы готовности, и «готов» наступал раньше,
+чем он принимал соединения. Добавлена проба на pg_isready.
+
+Запуск миграций:
+
+    docker build -t order-migrate:dev -f order-service/migrate.dockerfile order-service
+    kind load docker-image order-migrate:dev --name orders
+    kubectl -n orders delete job order-service-migrate --ignore-not-found
+    kubectl apply -f deploy/k8s/30-migrate-job.yaml

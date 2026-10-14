@@ -1,0 +1,27 @@
+# Миграции — один Job на выкладку, а не init-контейнер в каждом поде:
+# в K8S-04 три пода, стартовавшие разом, одновременно создавали таблицу
+# версий goose, и двое падали с duplicate key.
+#
+# Поды сервиса можно запускать в любом порядке относительно Job: /readyz
+# не пускает трафик, пока схема не той версии, что нужна образу.
+#
+# Job неизменяем: для новой версии миграций старый удаляют и создают заново
+# (в CI — с уникальным именем на релиз или через хуки Helm/Argo).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: order-service-migrate
+  namespace: orders
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: order-migrate:dev
+          imagePullPolicy: Never
+          env:
+            - name: GOOSE_DBSTRING
+              valueFrom:
+                secretKeyRef: {name: order-service-secrets, key: DATABASE_URL}
