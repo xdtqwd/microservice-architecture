@@ -223,3 +223,33 @@ func (j *Job) record(ctx context.Context, runID int64, key string, f Finding, ac
 		runID, string(f.Kind), action, key, paymentID, orderID, ourStatus, ourAmount, thStatus, thAmount, thCharge, f.Note)
 	return err
 }
+
+// RunScheduledOnce — как RunScheduled, но на несколько реплик: сверку за
+// период выполняет только та, что забрала период через claim. Остальные
+// пропускают тик.
+func (j *Job) RunScheduledOnce(ctx context.Context, every, window time.Duration,
+	claim func(ctx context.Context, every time.Duration) (bool, error)) {
+	j.logger.Info("reconciliation scheduled (single runner)", zap.Duration("every", every), zap.Duration("window", window))
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			ok, err := claim(ctx, every)
+			if err != nil {
+				j.logger.Error("reconciliation claim failed", zap.Error(err))
+				continue
+			}
+			if !ok {
+				j.logger.Debug("reconciliation skipped: period taken by another replica")
+				continue
+			}
+			to := time.Now()
+			if _, err := j.Run(ctx, to.Add(-window), to); err != nil {
+				j.logger.Error("reconciliation run failed", zap.Error(err))
+			}
+		}
+	}
+}
