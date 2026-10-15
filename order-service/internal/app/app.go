@@ -164,7 +164,12 @@ func (a *App) Run() error {
 	go a.relay.Run(relayCtx)
 	go a.refunds.Run(relayCtx)
 	go a.reconciler.Run(relayCtx)
-	go a.recon.RunScheduled(relayCtx, a.reconEvery, a.reconWindow)
+	// сверка — одна на весь сервис, а не по разу в каждой реплике (K8S-06)
+	lease := repository.NewJobLease(a.pool)
+	go a.recon.RunScheduledOnce(relayCtx, a.reconEvery, a.reconWindow,
+		func(ctx context.Context, every time.Duration) (bool, error) {
+			return lease.TryClaim(ctx, "reconciliation", every)
+		})
 
 	// метрики пула соединений
 	go func() {
