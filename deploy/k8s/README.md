@@ -113,3 +113,26 @@ Secret — это не шифрование: значения лежат в base
     kind load docker-image order-migrate:dev --name orders
     kubectl -n orders delete job order-service-migrate --ignore-not-found
     kubectl apply -f deploy/k8s/30-migrate-job.yaml
+
+## K8S-05: выкатка без потерь
+
+Нагрузка — k6 внутри кластера (`deploy/k8s/load/rollout.js`), 50 rps
+на Service, через 15 с `kubectl rollout restart`.
+
+| SHUTDOWN_DRAIN_DELAY | Неудачных запросов |
+|---|---|
+| 1ms (паузы нет) | 5 из 3000 (0.16%) |
+| 5s | 0 |
+
+Почему пауза нужна: при удалении пода Kubernetes одновременно шлёт SIGTERM
+и убирает под из списка адресов сервиса. Список расходится по кластеру
+не мгновенно — запросы ещё какое-то время летят в закрывающийся под.
+Пауза: /readyz уже 503, но порт открыт и запросы обслуживаются.
+В kind на одном узле окно — миллисекунды; на многоузловом кластере больше.
+
+terminationGracePeriodSeconds: 20 — пауза 5s + до 12s на текущие запросы.
+
+Находка по пути: SHUTDOWN_DRAIN_DELAY=0s молча превращается в дефолт 5s —
+getDuration принимает только значения > 0. Отключить паузу через
+окружение нельзя, а с виду настройка применилась. Первый прогон «без
+паузы» поэтому дал 0 ошибок.

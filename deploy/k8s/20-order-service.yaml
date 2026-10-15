@@ -11,6 +11,10 @@ spec:
     metadata:
       labels: {app: order-service}
     spec:
+      # 5s паузы (/readyz уже 503, порт открыт — список адресов успевает
+      # обновиться) + до 12s на текущие запросы + запас. Меньше — Kubernetes
+      # убьёт под посреди запросов.
+      terminationGracePeriodSeconds: 20
       containers:
         - name: order-service
           image: order-service:dev
