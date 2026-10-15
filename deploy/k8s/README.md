@@ -181,3 +181,39 @@ Unknown Topic Or Partition временной ошибкой (FAIL-02) — и б
 (--if-not-exists, 3 партиции). После него релеи дослали всё за 15 секунд.
 Урок: «временная» ошибка, которая не проходит, — постоянная. Нужен алерт
 на возраст самого старого неопубликованного события.
+
+### Автомасштабирование (HPA)
+
+Нужен metrics-server. В kind он работает только без проверки TLS к kubelet:
+
+~~~bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl -n kube-system patch deploy metrics-server --type=json \
+  -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+~~~
+
+Запуск нагрузки и наблюдение:
+
+~~~bash
+kubectl apply -f deploy/k8s/25-order-service-hpa.yaml
+kubectl -n orders run k6-hpa --rm -i --restart=Never --image=grafana/k6:latest --quiet \
+  -- run --quiet - < deploy/k8s/load/hpa.js
+kubectl -n orders get hpa order-service -w
+~~~
+
+**Результат:** CPU 112% от цели, реплики 3 → 6 за ~20 s. После нагрузки
+через 30 s стабилизации обратно к 3. Под при сворачивании выходит сам
+(`Completed`) благодаря drain-паузе.
+
+**Что выяснилось по дороге:**
+
+- **Проценты считаются от `requests`, а не от ядра.** При `requests.cpu: 100m`
+  под нагрузкой выходило ровно 60m = 60%, и масштабирования не было.
+- **У HPA допуск 10%.** Реплики меняются, только если отношение текущий/целевой
+  выходит за 0.9–1.1. Нагрузка, стоящая ровно на цели, не масштабируется.
+- **Без `-i` у `kubectl run` скрипт k6 не попадает в под.** k6 получает пустой
+  stdin, сразу выходит, нагрузки нет.
+- **Масштабирование умножает соединения к Postgres.** `DB_MAX_CONNS=10` ×
+  6 реплик = 60 из 100 `max_connections`. `maxReplicas` выше ~9 упрётся в базу
+  раньше, чем в CPU: новые поды не пройдут readiness или начнут ловить
+  таймауты пула. Предел реплик надо считать от базы, а не от нагрузки.
