@@ -217,3 +217,43 @@ kubectl -n orders get hpa order-service -w
   6 реплик = 60 из 100 `max_connections`. `maxReplicas` выше ~9 упрётся в базу
   раньше, чем в CPU: новые поды не пройдут readiness или начнут ловить
   таймауты пула. Предел реплик надо считать от базы, а не от нагрузки.
+
+## K8S-07. Отказоустойчивость
+
+### Postgres на постоянном диске
+
+**Как было сломано.** Postgres жил в Deployment с `emptyDir`. После
+`kubectl delete pod` новый под стартовал с пустой базой: не было даже
+таблицы `orders`. Все реплики `order-service` ушли в `0/1` с
+`schema not migrated: goose_db_version is missing`, и без ручного
+перезапуска Job миграций сервис не поднимался.
+
+**Как исправлено.** Postgres переведён на StatefulSet с `volumeClaimTemplates`.
+У пода постоянное имя `postgres-0` и свой PVC `data-postgres-0`
+(в kind его создаёт StorageClass `standard`). PVC переживает удаление пода.
+`PGDATA` указывает на подпапку тома: в корне может лежать `lost+found`,
+и initdb откажется работать в непустой папке.
+
+**Проверка:**
+
+~~~bash
+kubectl -n orders exec postgres-0 -- psql -U postgres -d orders_db \
+  -c "create table k8s07_marker(note text)" \
+  -c "insert into k8s07_marker values ('до удаления пода')"
+kubectl -n orders delete pod postgres-0
+kubectl -n orders wait --for=condition=ready pod/postgres-0 --timeout=60s
+kubectl -n orders exec postgres-0 -- psql -U postgres -d orders_db -c "select * from k8s07_marker"
+~~~
+
+Строка на месте, миграции заново не нужны, `order-service` без рестартов.
+
+**Что выяснилось по дороге:**
+
+- Сразу после рестарта Postgres `/readyz` около секунды отвечает
+  `context deadline exceeded`: в пуле остались соединения к старому поду.
+  Через 5–10 секунд всё возвращается само.
+- Пока схемы нет, воркер возвратов раз в секунду ходит в несуществующую
+  таблицу `refunds`. Readiness убирает под из балансировки, но фоновые
+  воркеры о ней не знают и продолжают работать.
+- Переход Deployment → StatefulSet не делается через `apply`: старый
+  Deployment надо удалить руками (`kubectl -n orders delete deploy postgres`).
