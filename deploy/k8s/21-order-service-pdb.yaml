@@ -1,0 +1,14 @@
+# Не больше одного пода order-service выселяется за раз при drain,
+# обновлении узлов и т.п. Остальные ждут, пока выселенный под
+# не поднимется где-то ещё.
+# maxUnavailable, а не minAvailable: при HPA реплик то 3, то 6,
+# а «не больше одного недоступного» работает при любом их числе.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: order-service
+  namespace: orders
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {app: order-service} 

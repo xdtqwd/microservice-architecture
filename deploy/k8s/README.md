@@ -181,3 +181,190 @@ Unknown Topic Or Partition временной ошибкой (FAIL-02) — и б
 (--if-not-exists, 3 партиции). После него релеи дослали всё за 15 секунд.
 Урок: «временная» ошибка, которая не проходит, — постоянная. Нужен алерт
 на возраст самого старого неопубликованного события.
+
+### Автомасштабирование (HPA)
+
+Нужен metrics-server. В kind он работает только без проверки TLS к kubelet:
+
+~~~bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl -n kube-system patch deploy metrics-server --type=json \
+  -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+~~~
+
+Запуск нагрузки и наблюдение:
+
+~~~bash
+kubectl apply -f deploy/k8s/25-order-service-hpa.yaml
+kubectl -n orders run k6-hpa --rm -i --restart=Never --image=grafana/k6:latest --quiet \
+  -- run --quiet - < deploy/k8s/load/hpa.js
+kubectl -n orders get hpa order-service -w
+~~~
+
+**Результат:** CPU 112% от цели, реплики 3 → 6 за ~20 s. После нагрузки
+через 30 s стабилизации обратно к 3. Под при сворачивании выходит сам
+(`Completed`) благодаря drain-паузе.
+
+**Что выяснилось по дороге:**
+
+- **Проценты считаются от `requests`, а не от ядра.** При `requests.cpu: 100m`
+  под нагрузкой выходило ровно 60m = 60%, и масштабирования не было.
+- **У HPA допуск 10%.** Реплики меняются, только если отношение текущий/целевой
+  выходит за 0.9–1.1. Нагрузка, стоящая ровно на цели, не масштабируется.
+- **Без `-i` у `kubectl run` скрипт k6 не попадает в под.** k6 получает пустой
+  stdin, сразу выходит, нагрузки нет.
+- **Масштабирование умножает соединения к Postgres.** `DB_MAX_CONNS=10` ×
+  6 реплик = 60 из 100 `max_connections`. `maxReplicas` выше ~9 упрётся в базу
+  раньше, чем в CPU: новые поды не пройдут readiness или начнут ловить
+  таймауты пула. Предел реплик надо считать от базы, а не от нагрузки.
+
+## K8S-07. Отказоустойчивость
+
+### Postgres на постоянном диске
+
+**Как было сломано.** Postgres жил в Deployment с `emptyDir`. После
+`kubectl delete pod` новый под стартовал с пустой базой: не было даже
+таблицы `orders`. Все реплики `order-service` ушли в `0/1` с
+`schema not migrated: goose_db_version is missing`, и без ручного
+перезапуска Job миграций сервис не поднимался.
+
+**Как исправлено.** Postgres переведён на StatefulSet с `volumeClaimTemplates`.
+У пода постоянное имя `postgres-0` и свой PVC `data-postgres-0`
+(в kind его создаёт StorageClass `standard`). PVC переживает удаление пода.
+`PGDATA` указывает на подпапку тома: в корне может лежать `lost+found`,
+и initdb откажется работать в непустой папке.
+
+**Проверка:**
+
+~~~bash
+kubectl -n orders exec postgres-0 -- psql -U postgres -d orders_db \
+  -c "create table k8s07_marker(note text)" \
+  -c "insert into k8s07_marker values ('до удаления пода')"
+kubectl -n orders delete pod postgres-0
+kubectl -n orders wait --for=condition=ready pod/postgres-0 --timeout=60s
+kubectl -n orders exec postgres-0 -- psql -U postgres -d orders_db -c "select * from k8s07_marker"
+~~~
+
+Строка на месте, миграции заново не нужны, `order-service` без рестартов.
+
+**Что выяснилось по дороге:**
+
+- Сразу после рестарта Postgres `/readyz` около секунды отвечает
+  `context deadline exceeded`: в пуле остались соединения к старому поду.
+  Через 5–10 секунд всё возвращается само.
+- Пока схемы нет, воркер возвратов раз в секунду ходит в несуществующую
+  таблицу `refunds`. Readiness убирает под из балансировки, но фоновые
+  воркеры о ней не знают и продолжают работать.
+- Переход Deployment → StatefulSet не делается через `apply`: старый
+  Deployment надо удалить руками (`kubectl -n orders delete deploy postgres`).
+
+### PodDisruptionBudget
+
+**Как было сломано.** `kubectl drain` выселил все три пода `order-service`
+одновременно. Новые повисли в `Pending` (узел помечен недоступным), и сервис
+лежал, пока узел не вернули через `uncordon`. k6: 64 ошибки из 2216.
+
+**Как исправлено.** `21-order-service-pdb.yaml`, `maxUnavailable: 1`:
+добровольно (drain, обновление узлов, автоскейлер кластера) выселяется
+не больше одного пода за раз. `maxUnavailable`, а не `minAvailable`:
+при HPA реплик то 3, то 6, а «не больше одного недоступного» работает
+при любом их числе.
+
+**Проверка** (узел один, поэтому выселяем только `order-service`):
+
+~~~bash
+NODE=$(kubectl get nodes -o name | head -1 | cut -d/ -f2)
+kubectl -n orders run k6-pdb --rm -i --restart=Never --image=grafana/k6:latest --quiet \
+  -- run --quiet - < deploy/k8s/load/rollout.js &
+sleep 10
+kubectl drain $NODE --pod-selector=app=order-service \
+  --ignore-daemonsets --delete-emptydir-data --timeout=30s
+kubectl uncordon $NODE
+~~~
+
+| | Ошибок | rps |
+|---|---|---|
+| без PDB | 64 из 2216 | 37/s |
+| с PDB | 0 из 3001 | 50/s |
+
+С PDB выселен один под, на остальные drain получает
+`Cannot evict pod as it would violate the pod's disruption budget`
+и через 30 s выходит по таймауту: на единственном узле переселять некуда.
+На кластере из нескольких узлов выселенный под поднялся бы на другом,
+и drain пошёл бы дальше по одному.
+
+**Что выяснилось по дороге:**
+
+- PDB защищает только от добровольного выселения. Если под упал сам или
+  умер узел, PDB ничего не сделает.
+- Сразу после создания у PDB `ALLOWED DISRUPTIONS 0`: статус ещё не
+  посчитан, и первая попытка выселения отбивается целиком.
+- Имя узла зависит от имени кластера kind (`orders-control-plane`),
+  поэтому в командах оно берётся через `kubectl get nodes`.
+
+### Гонка при одновременном старте реплик
+
+**Как нашлось.** После drain и `uncordon` три пода стартовали на свежей базе
+одновременно, и один упал:
+
+~~~text
+fake provider table: ERROR: duplicate key value violates unique constraint
+"pg_class_relname_nsp_index" (SQLSTATE 23505)
+~~~
+
+Фейковый платёжный провайдер на старте сам создавал свои таблицы через
+`CREATE TABLE IF NOT EXISTS`. Двое увидели, что таблицы нет, и оба полезли
+её создавать. `IF NOT EXISTS` в Postgres не атомарен: проверка и создание
+идут не одной операцией.
+
+**Как исправлено.** Таблицы `fake_provider_charges`, `fake_provider_refunds`,
+`fake_provider_settings` и индекс по ключу идемпотентности перенесены в миграцию
+`011_fake_provider.sql`, а конструктор провайдера больше не трогает схему.
+То же правило, что в K8S-04: схему меняет только Job миграций, сервис на
+старте её не трогает. `/readyz` не пустит поды в работу, пока версия схемы
+меньше 11.
+
+**Проверка:** три реплики стартуют разом, 0 рестартов, в логах ни одного
+`CREATE TABLE`:
+
+~~~bash
+kubectl -n orders scale deploy order-service --replicas=0
+kubectl -n orders wait --for=delete pod -l app=order-service --timeout=60s
+kubectl -n orders scale deploy order-service --replicas=3
+kubectl -n orders logs -l app=order-service --prefix --tail=300 | grep -c "CREATE TABLE"
+~~~
+
+### Внезапная смерть пода
+
+Под нагрузкой k6 (50 rps) под убивается разными способами:
+
+| Как ушёл под | Ошибок |
+|---|---|
+| drain без PDB | 64 из 2216 |
+| drain с PDB | 0 из 3001 |
+| `kubectl delete pod --grace-period=0 --force` | 0 из 3001 |
+| `kill -9` процесса на узле | 2 из 3001 |
+
+**`--force` — не падение.** Он удаляет из API только объект пода, и Service
+сразу перестаёт слать на него трафик. Процесс kubelet всё равно останавливает
+через SIGTERM, и сервис уходит штатно. Об этом прямо предупреждает kubectl:
+`Immediate deletion does not wait for confirmation that the running resource
+has been terminated`.
+
+**Настоящее падение** (OOM, паника) воспроизводится SIGKILL на узле kind:
+
+~~~bash
+NODE=$(kubectl get nodes -o name | head -1 | cut -d/ -f2)
+docker exec $NODE sh -c 'kill -9 $(pgrep -f "^/server" | head -1)'
+~~~
+
+Контейнер перезапускается на месте за ~2 s (`RESTARTS 1`), но запросы, которые
+были в полёте, и те, что успели уйти на мёртвый адрес, теряются.
+
+**Что с этим делать.** На сервере ничего: процесс уже мёртв. Это задача клиента:
+GET безопасно повторить, POST повторяется только с тем же ключом идемпотентности,
+тогда повтор вернёт результат первого вызова, а не создаст второй заказ.
+
+**Смерть узла хуже.** kubelet мёртв, и сообщить о смерти контейнеров некому:
+под ещё ~40 s числится `Ready`, пока узел не пометят `NotReady`, и трафик
+уходит в пустоту. На одноузловом kind это не воспроизвести.
