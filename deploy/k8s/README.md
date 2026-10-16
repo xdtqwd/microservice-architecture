@@ -257,3 +257,47 @@ kubectl -n orders exec postgres-0 -- psql -U postgres -d orders_db -c "select * 
   воркеры о ней не знают и продолжают работать.
 - Переход Deployment → StatefulSet не делается через `apply`: старый
   Deployment надо удалить руками (`kubectl -n orders delete deploy postgres`).
+
+### PodDisruptionBudget
+
+**Как было сломано.** `kubectl drain` выселил все три пода `order-service`
+одновременно. Новые повисли в `Pending` (узел помечен недоступным), и сервис
+лежал, пока узел не вернули через `uncordon`. k6: 64 ошибки из 2216.
+
+**Как исправлено.** `21-order-service-pdb.yaml`, `maxUnavailable: 1`:
+добровольно (drain, обновление узлов, автоскейлер кластера) выселяется
+не больше одного пода за раз. `maxUnavailable`, а не `minAvailable`:
+при HPA реплик то 3, то 6, а «не больше одного недоступного» работает
+при любом их числе.
+
+**Проверка** (узел один, поэтому выселяем только `order-service`):
+
+~~~bash
+NODE=$(kubectl get nodes -o name | head -1 | cut -d/ -f2)
+kubectl -n orders run k6-pdb --rm -i --restart=Never --image=grafana/k6:latest --quiet \
+  -- run --quiet - < deploy/k8s/load/rollout.js &
+sleep 10
+kubectl drain $NODE --pod-selector=app=order-service \
+  --ignore-daemonsets --delete-emptydir-data --timeout=30s
+kubectl uncordon $NODE
+~~~
+
+| | Ошибок | rps |
+|---|---|---|
+| без PDB | 64 из 2216 | 37/s |
+| с PDB | 0 из 3001 | 50/s |
+
+С PDB выселен один под, на остальные drain получает
+`Cannot evict pod as it would violate the pod's disruption budget`
+и через 30 s выходит по таймауту: на единственном узле переселять некуда.
+На кластере из нескольких узлов выселенный под поднялся бы на другом,
+и drain пошёл бы дальше по одному.
+
+**Что выяснилось по дороге:**
+
+- PDB защищает только от добровольного выселения. Если под упал сам или
+  умер узел, PDB ничего не сделает.
+- Сразу после создания у PDB `ALLOWED DISRUPTIONS 0`: статус ещё не
+  посчитан, и первая попытка выселения отбивается целиком.
+- Имя узла зависит от имени кластера kind (`orders-control-plane`),
+  поэтому в командах оно берётся через `kubectl get nodes`.
