@@ -333,3 +333,38 @@ kubectl -n orders wait --for=delete pod -l app=order-service --timeout=60s
 kubectl -n orders scale deploy order-service --replicas=3
 kubectl -n orders logs -l app=order-service --prefix --tail=300 | grep -c "CREATE TABLE"
 ~~~
+
+### Внезапная смерть пода
+
+Под нагрузкой k6 (50 rps) под убивается разными способами:
+
+| Как ушёл под | Ошибок |
+|---|---|
+| drain без PDB | 64 из 2216 |
+| drain с PDB | 0 из 3001 |
+| `kubectl delete pod --grace-period=0 --force` | 0 из 3001 |
+| `kill -9` процесса на узле | 2 из 3001 |
+
+**`--force` — не падение.** Он удаляет из API только объект пода, и Service
+сразу перестаёт слать на него трафик. Процесс kubelet всё равно останавливает
+через SIGTERM, и сервис уходит штатно. Об этом прямо предупреждает kubectl:
+`Immediate deletion does not wait for confirmation that the running resource
+has been terminated`.
+
+**Настоящее падение** (OOM, паника) воспроизводится SIGKILL на узле kind:
+
+~~~bash
+NODE=$(kubectl get nodes -o name | head -1 | cut -d/ -f2)
+docker exec $NODE sh -c 'kill -9 $(pgrep -f "^/server" | head -1)'
+~~~
+
+Контейнер перезапускается на месте за ~2 s (`RESTARTS 1`), но запросы, которые
+были в полёте, и те, что успели уйти на мёртвый адрес, теряются.
+
+**Что с этим делать.** На сервере ничего: процесс уже мёртв. Это задача клиента:
+GET безопасно повторить, POST повторяется только с тем же ключом идемпотентности,
+тогда повтор вернёт результат первого вызова, а не создаст второй заказ.
+
+**Смерть узла хуже.** kubelet мёртв, и сообщить о смерти контейнеров некому:
+под ещё ~40 s числится `Ready`, пока узел не пометят `NotReady`, и трафик
+уходит в пустоту. На одноузловом kind это не воспроизвести.
