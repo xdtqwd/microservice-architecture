@@ -44,40 +44,8 @@ func NewFakeProvider(ctx context.Context, pool *pgxpool.Pool, logger *zap.Logger
 	if f, err := strconv.ParseFloat(os.Getenv("PROVIDER_FAIL_RATE"), 64); err == nil {
 		failRate = f
 	}
-	_, err := pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS fake_provider_charges (
-			id         BIGSERIAL PRIMARY KEY,
-			order_id   INT NOT NULL,
-			amount     NUMERIC(12,2) NOT NULL,
-			status     TEXT NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)`)
-	if err != nil {
-		return nil, fmt.Errorf("fake provider table: %w", err)
-	}
-	// провайдер сам дедуплицирует списания по ключу идемпотентности
-	if _, err := pool.Exec(ctx, `
-		ALTER TABLE fake_provider_charges ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
-		CREATE UNIQUE INDEX IF NOT EXISTS fake_provider_charges_key ON fake_provider_charges (idempotency_key);`); err != nil {
-		return nil, fmt.Errorf("fake provider idempotency: %w", err)
-	}
-	// возвраты и переключатель доступности, который можно менять на лету:
-	// UPDATE fake_provider_settings SET down = true
-	if _, err := pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS fake_provider_refunds (
-			id              BIGSERIAL PRIMARY KEY,
-			idempotency_key TEXT UNIQUE NOT NULL,
-			charge_id       TEXT NOT NULL,
-			amount          NUMERIC(12,2) NOT NULL,
-			created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-		CREATE TABLE IF NOT EXISTS fake_provider_settings (
-			id   INT PRIMARY KEY,
-			down BOOLEAN NOT NULL DEFAULT false
-		);
-		INSERT INTO fake_provider_settings (id) VALUES (1) ON CONFLICT DO NOTHING;`); err != nil {
-		return nil, fmt.Errorf("fake provider refunds: %w", err)
-	}
+	// Таблицы провайдера создаёт миграция 011_fake_provider.sql, а не сервис:
+	// при одновременном старте реплик CREATE TABLE IF NOT EXISTS гонялся.
 	return &FakeProvider{pool: pool, delay: delay, failRate: failRate, logger: logger}, nil
 }
 

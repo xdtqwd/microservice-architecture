@@ -301,3 +301,35 @@ kubectl uncordon $NODE
   посчитан, и первая попытка выселения отбивается целиком.
 - Имя узла зависит от имени кластера kind (`orders-control-plane`),
   поэтому в командах оно берётся через `kubectl get nodes`.
+
+### Гонка при одновременном старте реплик
+
+**Как нашлось.** После drain и `uncordon` три пода стартовали на свежей базе
+одновременно, и один упал:
+
+~~~text
+fake provider table: ERROR: duplicate key value violates unique constraint
+"pg_class_relname_nsp_index" (SQLSTATE 23505)
+~~~
+
+Фейковый платёжный провайдер на старте сам создавал свои таблицы через
+`CREATE TABLE IF NOT EXISTS`. Двое увидели, что таблицы нет, и оба полезли
+её создавать. `IF NOT EXISTS` в Postgres не атомарен: проверка и создание
+идут не одной операцией.
+
+**Как исправлено.** Таблицы `fake_provider_charges`, `fake_provider_refunds`,
+`fake_provider_settings` и индекс по ключу идемпотентности перенесены в миграцию
+`011_fake_provider.sql`, а конструктор провайдера больше не трогает схему.
+То же правило, что в K8S-04: схему меняет только Job миграций, сервис на
+старте её не трогает. `/readyz` не пустит поды в работу, пока версия схемы
+меньше 11.
+
+**Проверка:** три реплики стартуют разом, 0 рестартов, в логах ни одного
+`CREATE TABLE`:
+
+~~~bash
+kubectl -n orders scale deploy order-service --replicas=0
+kubectl -n orders wait --for=delete pod -l app=order-service --timeout=60s
+kubectl -n orders scale deploy order-service --replicas=3
+kubectl -n orders logs -l app=order-service --prefix --tail=300 | grep -c "CREATE TABLE"
+~~~
