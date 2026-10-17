@@ -104,11 +104,68 @@ spec:
           emptyDir: {}
 ---
 apiVersion: v1
-kind: Service
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: prometheus
+  name: prometheus-config
   namespace: orders
-spec:
-  selector: {app: prometheus}
-  ports:
-    - port: 9090
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 5s
+      # по умолчанию правила проверяются раз в минуту, для стенда долго
+      evaluation_interval: 15s
+    rule_files:
+      - /etc/prometheus/alerts.yml
+    scrape_configs:
+      - job_name: pods
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces: {names: [orders]}
+        relabel_configs:
+          # собираем только поды с prometheus.io/scrape: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          # адрес = IP пода + порт из аннотации
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            regex: (.+)
+            target_label: __metrics_path__
+          # метки, по которым потом группируем
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+
+  alerts.yml: |
+    groups:
+      - name: order-service
+        rules:
+          # Больше 1% ответов — 5xx, и так держится минуту.
+          # for: 1m отсекает одиночные всплески: алерт сначала pending,
+          # и только если ошибки не прошли — firing.
+          - alert: OrderServiceHighErrorRate
+            expr: |
+              sum(rate(http_request_duration_seconds_count{app="order-service",status=~"5.."}[1m]))
+                /
+              sum(rate(http_request_duration_seconds_count{app="order-service"}[1m]))
+                > 0.01
+            for: 1m
+            labels: {severity: page}
+            annotations:
+              summary: "order-service: {{ $value | humanizePercentage }} ответов 5xx"
+
+          # Исчезнувший под пропадает из целей, поэтому up == 0 его не поймает.
+          # Считаем живые цели: меньше двух — один отказ от полного простоя.
+          - alert: OrderServiceFewReplicas
+            expr: count(up{app="order-service"} == 1) < 2 or absent(up{app="order-service"} == 1)
+            for: 30s
+            labels: {severity: page}
+            annotations:
+              summary: "order-service: живых реплик меньше двух"
