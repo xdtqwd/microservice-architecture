@@ -10,6 +10,14 @@ spec:
   template:
     metadata:
       labels: {app: order-service}
+      # Prometheus находит под по аннотации и ходит за метриками
+      # напрямую в под, мимо Service: через Service каждый раз
+      # попадал бы в случайную реплику. Аннотации именно здесь,
+      # в шаблоне пода: на Service или Deployment Prometheus их не ищет.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8083"
+        prometheus.io/path: /metrics
     spec:
       # 5s паузы (/readyz уже 503, порт открыт — список адресов успевает
       # обновиться) + до 12s на текущие запросы + запас. Меньше — Kubernetes
