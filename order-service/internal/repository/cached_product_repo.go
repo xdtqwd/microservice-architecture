@@ -17,6 +17,11 @@ import (
 
 const productTTL = 5 * time.Minute
 
+// leaderTimeout — предел для похода лидера singleflight в базу.
+// Меньше дедлайна запроса (10s): лидер работает на Background и не должен
+// держать соединение из пула дольше, чем кто-либо готов ждать ответ.
+const leaderTimeout = 3 * time.Second
+
 type ProductStorage interface {
 	GetProducts(ctx context.Context) ([]domain.Product, error)
 	GetProductByID(ctx context.Context, id int) (*domain.Product, error)
@@ -52,31 +57,55 @@ func (r *CachedProductRepo) GetProductByID(ctx context.Context, id int) (*domain
 		metrics.CacheHits.WithLabelValues("l2").Inc()
 		return &p, nil
 	}
-	if !errors.Is(err, cache.ErrCacheMiss) {
-		r.logger.Error("redis error", zap.Error(err))
-		return nil, err
+	if errors.Is(err, cache.ErrUnavailable) {
+		// предохранитель разомкнут: в Redis не ходили вовсе, штатный режим — без warn
+		metrics.CacheErrors.WithLabelValues("l2", "skipped").Inc()
+	} else if !errors.Is(err, cache.ErrCacheMiss) {
+		// Redis недоступен — деградируем в базу. Ошибку не прячем:
+		// лог и метрика нужны, иначе падение кеша станет незаметным.
+		r.logger.Warn("redis unavailable, falling back to db", zap.String("key", key), zap.Error(err))
+		metrics.CacheErrors.WithLabelValues("l2", "get").Inc()
 	}
 
 	r.logger.Debug("cache miss", zap.String("key", key))
 	metrics.CacheMisses.WithLabelValues("l2").Inc()
 
-	// под одним ключом в БД идёт ровно один запрос, остальные ждут его результат.
-	// внутри context.Background(): если лидер отвалится по таймауту, ведомые
-	// не должны остаться без ответа
-	val, err, _ := r.group.Do(key, func() (interface{}, error) {
+	// Под одним ключом в БД идёт ровно один запрос, остальные ждут его результат.
+	//
+	// Лидер работает на context.Background(): если он отвалится по таймауту
+	// своего клиента, ведомые не должны остаться без ответа. Но «навсегда»
+	// не бывает — у лидера свой предел leaderTimeout.
+	//
+	// DoChan вместо Do: Do не смотрит на контекст ждущего, и клиент висел бы,
+	// пока лидер не закончит (при заблокированной таблице — десятки секунд).
+	// Через select каждый ждущий уходит по своему дедлайну, лидер доделывает
+	// работу и кладёт результат в кеш для следующих.
+	ch := r.group.DoChan(key, func() (interface{}, error) {
+		dbCtx, cancel := context.WithTimeout(context.Background(), leaderTimeout)
+		defer cancel()
+
 		calls := atomic.AddInt64(&r.dbCalls, 1)
 		r.logger.Info("db call", zap.Int64("total", calls))
-		product, err := r.repo.GetProductByID(context.Background(), id)
+		product, err := r.repo.GetProductByID(dbCtx, id)
 		if err != nil {
 			return nil, err
 		}
-		if err := r.cache.Set(context.Background(), key, product, productTTL); err != nil {
-			r.logger.Error("cache set error", zap.Error(err))
+		if err := r.cache.Set(dbCtx, key, product, productTTL); err != nil && !errors.Is(err, cache.ErrUnavailable) {
+			r.logger.Warn("cache set failed", zap.String("key", key), zap.Error(err))
+			metrics.CacheErrors.WithLabelValues("l2", "set").Inc()
 		}
 		return product, nil
 	})
-	if err != nil {
-		return nil, err
+
+	var val interface{}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		val = res.Val
 	}
 
 	// копия, иначе все ведомые получат один указатель на общий объект
@@ -91,7 +120,11 @@ func (r *CachedProductRepo) InvalidateByID(ctx context.Context, id int) error {
 	// но уже запущенный лидер всё равно запишет прочитанное до сброса.
 	// окно гонки остаётся узким — между Do и Set лидера
 	if err := r.cache.Delete(ctx, key); err != nil {
-		r.logger.Error("cache delete error", zap.Error(err))
+		// Глотаем, но это самое дорогое место: если Redis жив, а Delete не прошёл,
+		// старое значение отдаётся до истечения productTTL.
+		r.logger.Error("cache delete failed, stale value may be served until TTL",
+			zap.String("key", key), zap.Error(err))
+		metrics.CacheErrors.WithLabelValues("l2", "delete").Inc()
 	}
 	r.group.Forget(key)
 	return nil
