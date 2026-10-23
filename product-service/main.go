@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -18,6 +19,11 @@ type Product struct {
 var products []Product
 
 func main() {
+	inbox := NewInboxStore()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go StartConsumer(ctx, inbox)
+
 	r := mux.NewRouter()
 	r.HandleFunc("/products", getProductsHandler).Methods("GET")
 	r.HandleFunc("/products", addProductHandler).Methods("POST")

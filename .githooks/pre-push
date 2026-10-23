@@ -1,0 +1,9 @@
+#!/bin/sh
+cd order-service
+echo "Running lint and tests before push..."
+make lint && make test
+if [ $? -ne 0 ]; then
+    echo "Pre-push checks failed. Use --no-verify to skip."
+    exit 1
+fi
+echo "Pre-push checks passed."

@@ -5,7 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"order-service/internal/domain"
+	"order-service/internal/txm"
+	"sort"
 	"time"
+
+	"github.com/shopspring/decimal"
+	"go.uber.org/zap"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -25,53 +30,87 @@ type OrderItem struct {
 	Price     float64
 }
 
-func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem) (int, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return 0, err
+func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, bool, error) {
+	if idempotencyKey != "" {
+		_, err := r.querier(ctx).Exec(ctx,
+			"INSERT INTO idempotency_keys (key, order_id) VALUES ($1, 0) ON CONFLICT (key) DO NOTHING",
+			idempotencyKey)
+		if err != nil {
+			return 0, false, err
+		}
+		var existingID int
+		err = r.querier(ctx).QueryRow(ctx,
+			"SELECT order_id FROM idempotency_keys WHERE key = $1",
+			idempotencyKey).Scan(&existingID)
+		if err == nil && existingID > 0 {
+			return existingID, true, nil
+		}
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := r.querier(ctx)
 
 	var orderID int
-	err = tx.QueryRow(ctx,
+	err := q.QueryRow(ctx,
 		"INSERT INTO orders (status) VALUES ('pending') RETURNING id").
 		Scan(&orderID)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].ProductID < items[j].ProductID
+	})
+
 	for _, item := range items {
-		var price float64
-		err = tx.QueryRow(ctx,
+		var price decimal.Decimal
+		err = q.QueryRow(ctx,
 			"SELECT price FROM products WHERE id = $1", item.ProductID).Scan(&price)
 		if err != nil {
-			return 0, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
+			return 0, false, fmt.Errorf("CreateOrder get price: %w", domain.ErrProductNotFound)
 		}
 
-		tag, err := tx.Exec(ctx,
+		tag, err := q.Exec(ctx,
 			"UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1",
 			item.Quantity, item.ProductID)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		if tag.RowsAffected() == 0 {
-			return 0, fmt.Errorf("CreateOrder: %w", domain.ErrInsufficientStock)
+			return 0, false, fmt.Errorf("CreateOrder: %w", domain.ErrInsufficientStock)
 		}
 
-		_, err = tx.Exec(ctx,
+		_, err = q.Exec(ctx,
 			`INSERT INTO order_items (order_id, product_id, quantity, price)
              VALUES ($1, $2, $3, $4)`,
 			orderID, item.ProductID, item.Quantity, price)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
-		return 0, err
+	if idempotencyKey != "" {
+		_, err = r.querier(ctx).Exec(ctx,
+			"UPDATE idempotency_keys SET order_id = $1 WHERE key = $2",
+			orderID, idempotencyKey)
+		if err != nil {
+			return 0, false, err
+		}
 	}
-	return orderID, nil
+	// сбрасываем кеш товаров: остатки изменились.
+	// Сбой инвалидации только логируем: вернуть ошибку значило бы откатить
+	// заказ из-за кеша. Контекст свой — запросный может быть уже отменён;
+	// предел задают короткие таймауты клиента Redis (100ms).
+	invalidCtx := context.Background()
+	for _, item := range items {
+		if err := r.invalidator.InvalidateByID(invalidCtx, item.ProductID); err != nil {
+			r.logger.Error("cache invalidation failed",
+				zap.Error(err),
+				zap.Int("product_id", item.ProductID),
+				zap.Int("order_id", orderID))
+		}
+	}
+
+	return orderID, false, nil
 }
 
 func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
@@ -107,12 +146,20 @@ func (r *OrderRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, er
 	return &o, nil
 }
 
-func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.Order, error) {
-	rows, err := r.pool.Query(ctx,
-		"SELECT id, status, created_at FROM orders ORDER BY id LIMIT $1 OFFSET $2",
-		limit, offset)
+func (r *OrderRepo) GetOrders(ctx context.Context, limit int, cursor *domain.OrderCursor) ([]domain.Order, *domain.OrderCursor, error) {
+	var rows pgx.Rows
+	var err error
+	if cursor != nil && cursor.AfterID > 0 {
+		rows, err = r.pool.Query(ctx,
+			"SELECT id, status, created_at FROM orders WHERE id < $1 ORDER BY id DESC LIMIT $2",
+			cursor.AfterID, limit)
+	} else {
+		rows, err = r.pool.Query(ctx,
+			"SELECT id, status, created_at FROM orders ORDER BY id DESC LIMIT $1",
+			limit)
+	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
@@ -121,23 +168,156 @@ func (r *OrderRepo) GetOrders(ctx context.Context, limit, offset int) ([]domain.
 		var o domain.Order
 		err = rows.Scan(&o.ID, &o.Status, &o.CreatedAt)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		orders = append(orders, o)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return orders, nil
+	if len(orders) == 0 {
+		return orders, nil, nil
+	}
+
+	// загружаем items одним запросом ANY($1)
+	ids := make([]int, len(orders))
+	for i, o := range orders {
+		ids[i] = o.ID
+	}
+	itemRows, err := r.pool.Query(ctx,
+		"SELECT id, order_id, product_id, quantity, price FROM order_items WHERE order_id = ANY($1) ORDER BY id",
+		ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer itemRows.Close()
+
+	itemsByOrder := make(map[int][]domain.OrderItem)
+	for itemRows.Next() {
+		var item domain.OrderItem
+		if err := itemRows.Scan(&item.ID, &item.OrderID, &item.ProductID, &item.Quantity, &item.Price); err != nil {
+			return nil, nil, err
+		}
+		itemsByOrder[item.OrderID] = append(itemsByOrder[item.OrderID], item)
+	}
+	if err := itemRows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	for i := range orders {
+		orders[i].Items = itemsByOrder[orders[i].ID]
+	}
+
+	var nextCursor *domain.OrderCursor
+	if len(orders) == limit {
+		last := orders[len(orders)-1]
+		nextCursor = &domain.OrderCursor{AfterID: last.ID, CreatedAt: last.CreatedAt}
+	}
+	return orders, nextCursor, nil
 }
 
 func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		fctx, cancel := txm.Detached()
+		defer cancel()
+		_ = tx.Rollback(fctx)
+	}()
+
+	// проверяем статус внутри транзакции с блокировкой строки
+	var currentStatus string
+	err = tx.QueryRow(ctx,
+		"SELECT status FROM orders WHERE id = $1 FOR UPDATE", id).Scan(&currentStatus)
+	if err != nil {
+		return 0, fmt.Errorf("CancelOrder: %w", domain.ErrOrderNotFound)
+	}
+	if !domain.CanTransition(currentStatus, "cancelled") {
+		if currentStatus == "cancelled" {
+			return 0, domain.ErrOrderAlreadyCancelled
+		}
+		return 0, fmt.Errorf("CancelOrder: %w", domain.ErrInvalidStatusTransition)
+	}
+
+	// Платёж начат, но исход неизвестен: деньги могли уже списать. Отменять
+	// сейчас нельзя — либо потеряем возврат, либо вернём несписанное.
+	// Клиент повторит отмену, когда платёж завершится.
+	if currentStatus == "pending" {
+		var inProgress bool
+		if err := tx.QueryRow(ctx,
+			"SELECT EXISTS (SELECT 1 FROM payments WHERE order_id = $1 AND status = 'pending')",
+			id).Scan(&inProgress); err != nil {
+			return 0, err
+		}
+		if inProgress {
+			return 0, domain.ErrPaymentInProgress
+		}
+	}
+
+	// меняем статус
 	var cancelledID int
-	err := r.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		"UPDATE orders SET status = $1 WHERE id = $2 RETURNING id",
 		"cancelled", id).Scan(&cancelledID)
 	if err != nil {
 		return 0, err
 	}
+
+	// Оплаченный заказ: записываем возврат денег в той же транзакции,
+	// что и возврат остатков, — либо оба, либо ничего.
+	// К провайдеру отсюда НЕ ходим: внешний вызов внутри транзакции держал бы
+	// блокировки строк заказа и товаров и соединение из пула всё время ответа
+	// провайдера (секунды, а при его сбое — до таймаута). К тому же откат базы
+	// не откатит списание у провайдера. Возврат отправит RefundWorker.
+	if currentStatus == "paid" {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO refunds (payment_id, amount, status)
+			SELECT id, amount, 'pending' FROM payments
+			WHERE order_id = $1 AND status = 'succeeded'
+			ON CONFLICT (payment_id) DO NOTHING`, id); err != nil {
+			return 0, err
+		}
+	}
+
+	// возвращаем stock по всем позициям заказа и запоминаем, какие товары тронули
+	rows, err := tx.Query(ctx, `
+		UPDATE products p
+		SET stock = stock + oi.quantity
+		FROM order_items oi
+		WHERE oi.order_id = $1 AND oi.product_id = p.id
+		RETURNING p.id`,
+		id)
+	if err != nil {
+		return 0, err
+	}
+	var productIDs []int
+	for rows.Next() {
+		var pid int
+		if err := rows.Scan(&pid); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		productIDs = append(productIDs, pid)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	if err = commitDetached(tx); err != nil {
+		return 0, err
+	}
+
+	// сбрасываем кеш только после коммита: иначе читатель может успеть
+	// положить в кеш старое значение до того, как изменения станут видны
+	for _, pid := range productIDs {
+		if err := r.invalidator.InvalidateByID(context.Background(), pid); err != nil {
+			r.logger.Error("cache invalidation after cancel failed",
+				zap.Int("order_id", id), zap.Int("product_id", pid), zap.Error(err))
+		}
+	}
+
 	return cancelledID, nil
 }

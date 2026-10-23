@@ -28,9 +28,46 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:password@postgres:5432/orders_db
       REDIS_ADDR: redis:6379
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-10}
+      DB_MIN_CONNS: ${DB_MIN_CONNS:-2}
+      DB_ACQUIRE_TIMEOUT: ${DB_ACQUIRE_TIMEOUT:-1s}
+      REDIS_BREAKER_THRESHOLD: ${REDIS_BREAKER_THRESHOLD:-5}
+      REDIS_BREAKER_OPEN_FOR: ${REDIS_BREAKER_OPEN_FOR:-5s}
+      SHUTDOWN_DRAIN_DELAY: ${SHUTDOWN_DRAIN_DELAY:-5s}
+      PROVIDER_DELAY: ${PROVIDER_DELAY:-2s}
+      PROVIDER_FAIL_RATE: ${PROVIDER_FAIL_RATE:-0.2}
+      PAY_CRASH_AFTER_CHARGE: ${PAY_CRASH_AFTER_CHARGE:-0}
+      PAY_STUCK_AFTER: ${PAY_STUCK_AFTER:-2m}
+      PAY_EXPIRE_AFTER: ${PAY_EXPIRE_AFTER:-15m}
+      RECONCILE_EVERY: ${RECONCILE_EVERY:-1h}
+      RECONCILE_WINDOW: ${RECONCILE_WINDOW:-48h}
+    # 5s пауза + до 12s на текущие запросы + запас
+    stop_grace_period: 20s
     depends_on:
       - postgres
       - redis
+
+  kafka:
+    image: mirror.gcr.io/apache/kafka:3.7.0
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+
+  product-service:
+    build: ./product-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      - kafka
 
 volumes:
   pgdata:
