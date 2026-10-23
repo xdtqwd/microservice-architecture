@@ -15,3 +15,5 @@ var (
 	ErrInvalidCursor      = errors.New("invalid cursor")
 	ErrOffsetNotSupported = errors.New("offset is not supported, use after_id for pagination")
 )
+
+var ErrPaymentDeclined = errors.New("payment declined")

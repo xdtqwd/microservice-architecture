@@ -1,0 +1,25 @@
+# Топики создаются явно, как миграции базы: партиции и настройки под контролем.
+# Без этого релей outbox получал Unknown Topic Or Partition, считал это
+# временной ошибкой и бесконечно ретраил — события копились незаметно (K8S-06).
+# --if-not-exists делает Job безопасным для повторного запуска.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics
+  namespace: orders
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: topics
+          image: mirror.gcr.io/apache/kafka:3.7.0
+          command:
+            - /opt/kafka/bin/kafka-topics.sh
+            - --bootstrap-server=kafka:9092
+            - --create
+            - --if-not-exists
+            - --topic=orders
+            - --partitions=3
+            - --replication-factor=1
