@@ -34,3 +34,15 @@ CREATE TABLE IF NOT EXISTS outbox (
     created_at   TIMESTAMPTZ DEFAULT NOW(),
     published_at TIMESTAMPTZ
 );
+
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS retry_count INT NOT NULL DEFAULT 0;
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS failed_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS outbox_dlq (
+    id           BIGSERIAL PRIMARY KEY,
+    aggregate_id INT NOT NULL,
+    event_type   TEXT NOT NULL,
+    payload      JSONB NOT NULL,
+    error        TEXT,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);

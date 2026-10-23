@@ -3,11 +3,9 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o server ./cmd
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o server ./cmd
 
-FROM alpine:3.19
-WORKDIR /app
-RUN adduser -D -u 1000 appuser
-COPY --from=builder /app/server .
-USER appuser
-CMD ["./server"]
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /app/server /server
+USER nonroot:nonroot
+CMD ["/server"]

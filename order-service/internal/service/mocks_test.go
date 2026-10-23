@@ -15,6 +15,7 @@ type mockRepo struct {
 	nextID          int
 	idempotencyKeys map[string]int
 	mu              sync.Mutex
+	dbCalls         int // счётчик обращений к репозиторию
 }
 
 func newMockRepo() *mockRepo {
@@ -40,11 +41,19 @@ func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, id
 	orderItems := make([]domain.OrderItem, len(items))
 	for i, item := range items {
 		price := decimal.NewFromInt(0)
+		found := false
 		for _, p := range m.products {
 			if p.ID == item.ProductID {
+				if p.Stock < item.Quantity {
+					return 0, false, domain.ErrInsufficientStock
+				}
 				price = p.Price
+				found = true
 				break
 			}
+		}
+		if !found {
+			return 0, false, domain.ErrProductNotFound
 		}
 		orderItems[i] = domain.OrderItem{
 			ProductID: item.ProductID,
@@ -60,6 +69,8 @@ func (m *mockRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, id
 }
 
 func (m *mockRepo) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, o := range m.orders {
 		if o.ID == id {
 			return &o, nil
@@ -72,11 +83,23 @@ func (m *mockRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Orde
 	if len(m.orders) == 0 {
 		return []domain.Order{}, nil, nil
 	}
-	end := limit
+	start := 0
+	if cursor != nil && cursor.AfterID > 0 {
+		for i, o := range m.orders {
+			if o.ID == cursor.AfterID {
+				start = i + 1
+				break
+			}
+		}
+	}
+	if start >= len(m.orders) {
+		return []domain.Order{}, nil, nil
+	}
+	end := start + limit
 	if end > len(m.orders) {
 		end = len(m.orders)
 	}
-	orders := m.orders[:end]
+	orders := m.orders[start:end]
 	var nextCursor *domain.OrderCursor
 	if len(orders) == limit {
 		nextCursor = &domain.OrderCursor{AfterID: orders[len(orders)-1].ID}
@@ -84,6 +107,8 @@ func (m *mockRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Orde
 	return orders, nextCursor, nil
 }
 func (m *mockRepo) CancelOrder(ctx context.Context, id int) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for i, o := range m.orders {
 		if o.ID == id {
 			if !domain.CanTransition(o.Status, "cancelled") {
@@ -103,6 +128,9 @@ func (m *mockRepo) GetProducts(ctx context.Context) ([]domain.Product, error) {
 }
 
 func (m *mockRepo) GetProductByID(ctx context.Context, id int) (*domain.Product, error) {
+	m.mu.Lock()
+	m.dbCalls++
+	m.mu.Unlock()
 	for _, p := range m.products {
 		if p.ID == id {
 			return &p, nil

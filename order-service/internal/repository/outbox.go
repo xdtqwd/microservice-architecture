@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"order-service/internal/txm"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type OutboxEvent struct {

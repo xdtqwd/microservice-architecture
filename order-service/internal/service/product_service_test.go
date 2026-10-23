@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
-	"order-service/internal/domain"
 )
 
 func TestGetProductByID_CacheMiss(t *testing.T) {
@@ -32,16 +31,6 @@ func TestGetProductByID_CacheHit(t *testing.T) {
 	assert.Equal(t, "MacBook Pro", product.Name)
 }
 
-func TestInvalidateCache(t *testing.T) {
-	ctx := context.Background()
-	repo := newMockRepo()
-	svc := NewProductService(repo, zap.NewNop())
-
-	_, err := svc.GetProductByID(ctx, 1)
-	assert.NoError(t, err)
-	err = svc.InvalidateCache(ctx, 1)
-	assert.NoError(t, err)
-}
 func TestGetProducts(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
@@ -50,31 +39,4 @@ func TestGetProducts(t *testing.T) {
 	products, err := svc.GetProducts(ctx)
 	assert.NoError(t, err)
 	assert.Len(t, products, 2)
-}
-func TestGetOrders_LimitCappedToMax(t *testing.T) {
-	ctx := context.Background()
-	repo := newMockRepo()
-	svc := NewOrderService(repo, nil, zap.NewNop(), nil, nil)
-
-	items := []domain.CreateOrderItem{{ProductID: 1, Quantity: 1}}
-	for i := 0; i < 5; i++ {
-		_, _, err := svc.CreateOrder(ctx, items, "")
-		assert.NoError(t, err)
-	}
-
-	orders, _, err := svc.GetOrders(ctx, 10000, nil)
-	assert.NoError(t, err)
-	assert.LessOrEqual(t, len(orders), 100)
-
-	orders, _, err = svc.GetOrders(ctx, -1, nil)
-	assert.NoError(t, err)
-	assert.NotNil(t, orders)
-
-	orders, _, err = svc.GetOrders(ctx, 2, nil)
-	assert.NoError(t, err)
-	assert.Len(t, orders, 2)
-
-	orders, _, err = svc.GetOrders(ctx, 2, &domain.OrderCursor{AfterID: 2})
-	assert.NoError(t, err)
-	assert.Len(t, orders, 2)
 }

@@ -1,0 +1,26 @@
+# От 3 до 6 реплик по загрузке CPU.
+# Каждая реплика держит до DB_MAX_CONNS=10 соединений с Postgres:
+# 6 реплик — до 60 соединений при max_connections=100. Поднимая maxReplicas,
+# надо помнить, что масштабирование сервиса умножает нагрузку на базу.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: order-service
+  namespace: orders
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: order-service
+  minReplicas: 3
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 60}
+  behavior:
+    # по умолчанию HPA ждёт 5 минут, прежде чем убрать реплики, — чтобы не
+    # дёргаться на всплесках. Для эксперимента — 30 секунд.
+    scaleDown:
+      stabilizationWindowSeconds: 30

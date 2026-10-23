@@ -1,1 +1,5 @@
 .DS_Store
+*.bck.yml
+coverage.out
+coverage.html
+server

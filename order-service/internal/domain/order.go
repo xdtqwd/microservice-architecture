@@ -34,13 +34,14 @@ type CreateOrderItem struct {
 }
 
 type OrderCursor struct {
-	AfterID int
+	AfterID   int
+	CreatedAt time.Time
 }
 
 var allowedTransitions = map[string][]string{
-	"pending":  {"paid", "cancelled"},
-	"paid":     {"shipped", "cancelled"},
-	"shipped":  {"delivered"},
+	"pending":   {"paid", "cancelled"},
+	"paid":      {"shipped", "cancelled"},
+	"shipped":   {"delivered"},
 	"delivered": {},
 	"cancelled": {},
 }

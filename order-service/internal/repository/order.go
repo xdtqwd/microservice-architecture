@@ -5,8 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"order-service/internal/domain"
-	"github.com/shopspring/decimal"
+	"order-service/internal/txm"
+	"sort"
 	"time"
+
+	"github.com/shopspring/decimal"
+	"go.uber.org/zap"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -28,14 +32,14 @@ type OrderItem struct {
 
 func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, idempotencyKey string) (int, bool, error) {
 	if idempotencyKey != "" {
-		_, err := r.pool.Exec(context.Background(),
+		_, err := r.querier(ctx).Exec(ctx,
 			"INSERT INTO idempotency_keys (key, order_id) VALUES ($1, 0) ON CONFLICT (key) DO NOTHING",
 			idempotencyKey)
 		if err != nil {
 			return 0, false, err
 		}
 		var existingID int
-		err = r.pool.QueryRow(context.Background(),
+		err = r.querier(ctx).QueryRow(ctx,
 			"SELECT order_id FROM idempotency_keys WHERE key = $1",
 			idempotencyKey).Scan(&existingID)
 		if err == nil && existingID > 0 {
@@ -52,6 +56,10 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 	if err != nil {
 		return 0, false, err
 	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].ProductID < items[j].ProductID
+	})
 
 	for _, item := range items {
 		var price decimal.Decimal
@@ -81,13 +89,27 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, items []domain.OrderItem, i
 	}
 
 	if idempotencyKey != "" {
-		_, err = r.pool.Exec(context.Background(),
+		_, err = r.querier(ctx).Exec(ctx,
 			"UPDATE idempotency_keys SET order_id = $1 WHERE key = $2",
 			orderID, idempotencyKey)
 		if err != nil {
 			return 0, false, err
 		}
 	}
+	// сбрасываем кеш товаров: остатки изменились.
+	// Сбой инвалидации только логируем: вернуть ошибку значило бы откатить
+	// заказ из-за кеша. Контекст свой — запросный может быть уже отменён;
+	// предел задают короткие таймауты клиента Redis (100ms).
+	invalidCtx := context.Background()
+	for _, item := range items {
+		if err := r.invalidator.InvalidateByID(invalidCtx, item.ProductID); err != nil {
+			r.logger.Error("cache invalidation failed",
+				zap.Error(err),
+				zap.Int("product_id", item.ProductID),
+				zap.Int("order_id", orderID))
+		}
+	}
+
 	return orderID, false, nil
 }
 
@@ -188,15 +210,27 @@ func (r *OrderRepo) GetOrders(ctx context.Context, limit int, cursor *domain.Ord
 
 	var nextCursor *domain.OrderCursor
 	if len(orders) == limit {
-		nextCursor = &domain.OrderCursor{AfterID: orders[len(orders)-1].ID}
+		last := orders[len(orders)-1]
+		nextCursor = &domain.OrderCursor{AfterID: last.ID, CreatedAt: last.CreatedAt}
 	}
 	return orders, nextCursor, nil
 }
 
 func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		fctx, cancel := txm.Detached()
+		defer cancel()
+		_ = tx.Rollback(fctx)
+	}()
+
+	// проверяем статус внутри транзакции с блокировкой строки
 	var currentStatus string
-	err := r.pool.QueryRow(ctx,
-		"SELECT status FROM orders WHERE id = $1", id).Scan(&currentStatus)
+	err = tx.QueryRow(ctx,
+		"SELECT status FROM orders WHERE id = $1 FOR UPDATE", id).Scan(&currentStatus)
 	if err != nil {
 		return 0, fmt.Errorf("CancelOrder: %w", domain.ErrOrderNotFound)
 	}
@@ -206,12 +240,84 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int) (int, error) {
 		}
 		return 0, fmt.Errorf("CancelOrder: %w", domain.ErrInvalidStatusTransition)
 	}
+
+	// Платёж начат, но исход неизвестен: деньги могли уже списать. Отменять
+	// сейчас нельзя — либо потеряем возврат, либо вернём несписанное.
+	// Клиент повторит отмену, когда платёж завершится.
+	if currentStatus == "pending" {
+		var inProgress bool
+		if err := tx.QueryRow(ctx,
+			"SELECT EXISTS (SELECT 1 FROM payments WHERE order_id = $1 AND status = 'pending')",
+			id).Scan(&inProgress); err != nil {
+			return 0, err
+		}
+		if inProgress {
+			return 0, domain.ErrPaymentInProgress
+		}
+	}
+
+	// меняем статус
 	var cancelledID int
-	err = r.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		"UPDATE orders SET status = $1 WHERE id = $2 RETURNING id",
 		"cancelled", id).Scan(&cancelledID)
 	if err != nil {
 		return 0, err
 	}
+
+	// Оплаченный заказ: записываем возврат денег в той же транзакции,
+	// что и возврат остатков, — либо оба, либо ничего.
+	// К провайдеру отсюда НЕ ходим: внешний вызов внутри транзакции держал бы
+	// блокировки строк заказа и товаров и соединение из пула всё время ответа
+	// провайдера (секунды, а при его сбое — до таймаута). К тому же откат базы
+	// не откатит списание у провайдера. Возврат отправит RefundWorker.
+	if currentStatus == "paid" {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO refunds (payment_id, amount, status)
+			SELECT id, amount, 'pending' FROM payments
+			WHERE order_id = $1 AND status = 'succeeded'
+			ON CONFLICT (payment_id) DO NOTHING`, id); err != nil {
+			return 0, err
+		}
+	}
+
+	// возвращаем stock по всем позициям заказа и запоминаем, какие товары тронули
+	rows, err := tx.Query(ctx, `
+		UPDATE products p
+		SET stock = stock + oi.quantity
+		FROM order_items oi
+		WHERE oi.order_id = $1 AND oi.product_id = p.id
+		RETURNING p.id`,
+		id)
+	if err != nil {
+		return 0, err
+	}
+	var productIDs []int
+	for rows.Next() {
+		var pid int
+		if err := rows.Scan(&pid); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		productIDs = append(productIDs, pid)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	if err = commitDetached(tx); err != nil {
+		return 0, err
+	}
+
+	// сбрасываем кеш только после коммита: иначе читатель может успеть
+	// положить в кеш старое значение до того, как изменения станут видны
+	for _, pid := range productIDs {
+		if err := r.invalidator.InvalidateByID(context.Background(), pid); err != nil {
+			r.logger.Error("cache invalidation after cancel failed",
+				zap.Int("order_id", id), zap.Int("product_id", pid), zap.Error(err))
+		}
+	}
+
 	return cancelledID, nil
 }

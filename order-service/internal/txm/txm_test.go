@@ -6,9 +6,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/jackc/pgx/v5/pgxpool"
 	mytxm "order-service/internal/txm"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
 )
 
 func setupPool(t *testing.T) *pgxpool.Pool {
