@@ -7,8 +7,8 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
-	"order-service/internal/productclient"
 	"order-service/internal/payment"
+	"order-service/internal/productclient"
 	"order-service/internal/reconciliation"
 	"order-service/migrations"
 
