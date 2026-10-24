@@ -8,6 +8,7 @@ import (
 	"order-service/internal/config"
 	"order-service/internal/handler"
 	"order-service/internal/payment"
+	"order-service/internal/productclient"
 	"order-service/internal/reconciliation"
 	"order-service/migrations"
 
@@ -26,6 +27,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type App struct {
@@ -115,6 +118,39 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	orderRepo, productRepo := newRepositories(pool, redisCache, logger)
 	orderSvc, productSvc := newServices(orderRepo, productRepo, pool, logger)
 
+	// Откуда брать цены: db — своя таблица (как раньше), grpc — product-service,
+	// grpc-cached — product-service с кешем (по умолчанию).
+	switch mode := os.Getenv("PRODUCT_CATALOG"); mode {
+	case "db":
+		logger.Info("prices from local products table")
+	case "grpc", "grpc-cached", "":
+		addr := os.Getenv("PRODUCT_GRPC_ADDR")
+		if addr == "" {
+			addr = "product-service:9090"
+		}
+		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithDefaultServiceConfig(productclient.ServiceConfig),
+			grpc.WithChainUnaryInterceptor(
+				productclient.RequestIDPropagation,
+				productclient.ClientObserver(logger),
+				productclient.DeadlineMetrics,
+			))
+		if err != nil {
+			return nil, fmt.Errorf("catalog client: %w", err)
+		}
+		// кеш -> предохранитель -> gRPC с повторами. Кеш снаружи: он может отдать
+		// устаревшую цену и тогда, когда предохранитель разомкнут.
+		var catalog productclient.PriceSource = productclient.NewGRPCCatalog(conn, catalogTimeout())
+		catalog = productclient.NewBreakerCatalog(catalog, 5, 5*time.Second)
+		if mode != "grpc" {
+			catalog = productclient.NewCachedCatalog(catalog, 10_000, 30*time.Second).
+				WithMaxStale(envDuration("CATALOG_MAX_STALE", 10*time.Minute))
+		}
+		orderSvc.WithCatalog(catalog)
+		logger.Info("prices from product-service", zap.String("addr", addr), zap.String("mode", mode))
+	default:
+		return nil, fmt.Errorf("unknown PRODUCT_CATALOG %q", mode)
+	}
 	provider, err := payment.NewFakeProvider(ctx, pool, logger)
 	if err != nil {
 		return nil, err
@@ -225,4 +261,19 @@ func (a *App) Run() error {
 	a.logger.Info("DB pool closed")
 
 	return nil
+}
+
+// catalogTimeout — потолок одного вызова каталога, CATALOG_TIMEOUT (по умолчанию 500ms).
+func catalogTimeout() time.Duration {
+	if d, err := time.ParseDuration(os.Getenv("CATALOG_TIMEOUT")); err == nil && d > 0 {
+		return d
+	}
+	return 500 * time.Millisecond
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	if d, err := time.ParseDuration(os.Getenv(key)); err == nil && d > 0 {
+		return d
+	}
+	return fallback
 }

@@ -22,6 +22,7 @@ var errToStatus = map[error]int{
 	domain.ErrOrderAlreadyCancelled:   http.StatusConflict,
 	domain.ErrInvalidCursor:           http.StatusBadRequest,
 	domain.ErrOffsetNotSupported:      http.StatusBadRequest,
+	domain.ErrCatalogUnavailable:      http.StatusServiceUnavailable,
 	domain.ErrPaymentDeclined:         http.StatusPaymentRequired,
 	domain.ErrPaymentAlreadyActive:    http.StatusConflict,
 	domain.ErrPaymentTransition:       http.StatusConflict,
