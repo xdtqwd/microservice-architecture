@@ -31,7 +31,13 @@ type L1ProductRepo struct {
 }
 
 func NewL1ProductRepo(repo StorageWithInvalidation) *L1ProductRepo {
-	cache := lru.NewLRU[string, domain.Product](l1MaxSize, nil, l1TTL)
+	return NewL1ProductRepoWithConfig(repo, l1MaxSize, l1TTL)
+}
+
+// NewL1ProductRepoWithConfig позволяет задать размер и TTL — нужно тестам,
+// чтобы проверять истечение за миллисекунды, а не ждать 10 секунд.
+func NewL1ProductRepoWithConfig(repo StorageWithInvalidation, size int, ttl time.Duration) *L1ProductRepo {
+	cache := lru.NewLRU[string, domain.Product](size, nil, ttl)
 	return &L1ProductRepo{repo: repo, cache: cache}
 }
 

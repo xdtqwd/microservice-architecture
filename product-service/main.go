@@ -19,10 +19,11 @@ type Product struct {
 var products []Product
 
 func main() {
-	inbox := NewInboxStore()
+	db := connectDB()
+	defer db.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go StartConsumer(ctx, inbox)
+	go StartConsumer(ctx, db)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/products", getProductsHandler).Methods("GET")

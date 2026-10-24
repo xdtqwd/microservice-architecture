@@ -23,3 +23,4 @@ var (
 	// ErrUnsupportedMediaType — тело не в application/json.
 	ErrUnsupportedMediaType = errors.New("content type must be application/json")
 )
+var ErrPaymentDeclined = errors.New("payment declined")
