@@ -81,14 +81,8 @@ func setupRoutes(h *handler.Handler, health *handler.HealthHandler, pay *handler
 	r.Handle("/orders/{id}/pay", pay.Handler()).Methods("POST")
 	r.Handle("/metrics", promhttp.Handler())
 
-	chain := handler.RequestID(
-		handler.Logger(logger)(
-			handler.Recover(logger)(
-				handler.Timeout(10 * time.Second)(r),
-			),
-		),
-	)
-	return chain
+	r.Use(handler.LoggerMiddleware(logger))
+	return handler.RequestID(handler.Recover(logger)(handler.Timeout(10 * time.Second)(r)))
 }
 
 func New(ctx context.Context, logger *zap.Logger) (*App, error) {
