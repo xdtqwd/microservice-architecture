@@ -7,6 +7,10 @@ import (
 	"order-service/internal/cache"
 	"order-service/internal/config"
 	"order-service/internal/handler"
+	"order-service/internal/payment"
+	"order-service/internal/reconciliation"
+	"order-service/migrations"
+
 	"order-service/internal/kafka"
 	"order-service/internal/metrics"
 	"order-service/internal/repository"
@@ -25,19 +29,22 @@ import (
 )
 
 type App struct {
-	server *http.Server
-	logger *zap.Logger
-	ctx    context.Context
-	pool   *pgxpool.Pool
-	cache  *cache.RedisCache
-	relay  *worker.OutboxRelay
+	server                  *http.Server
+	logger                  *zap.Logger
+	ctx                     context.Context
+	pool                    *pgxpool.Pool
+	cache                   *cache.RedisCache
+	relay                   *worker.OutboxRelay
+	refunds                 *worker.RefundWorker
+	reconciler              *worker.ReconcileWorker
+	recon                   *reconciliation.Job
+	reconEvery, reconWindow time.Duration
+	health                  *handler.HealthHandler
+	drainDelay              time.Duration
 }
 
 func newRepositories(pool *pgxpool.Pool, c *cache.RedisCache, logger *zap.Logger) (*repository.OrderRepo, repository.ProductStorage) {
-	productRepo := repository.NewProductRepo(pool)
-	cachedProductRepo := repository.NewCachedProductRepo(productRepo, c, logger)
-	l1ProductRepo := repository.NewL1ProductRepo(cachedProductRepo)
-	return repository.NewOrderRepo(pool, l1ProductRepo, logger), l1ProductRepo
+	return repository.NewRepositories(pool, c, logger)
 }
 
 func newServices(
@@ -61,7 +68,7 @@ func newHandler(
 	return handler.New(orderSvc, productSvc, logger)
 }
 
-func setupRoutes(h *handler.Handler, health *handler.HealthHandler, logger *zap.Logger) http.Handler {
+func setupRoutes(h *handler.Handler, health *handler.HealthHandler, pay *handler.PaymentHandler, logger *zap.Logger) http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/products", h.GetProducts).Methods("GET")
 	r.HandleFunc("/products/{id}", h.GetProductByID).Methods("GET")
@@ -71,6 +78,7 @@ func setupRoutes(h *handler.Handler, health *handler.HealthHandler, logger *zap.
 	r.HandleFunc("/orders/{id}/cancel", h.CancelOrder).Methods("POST")
 	r.HandleFunc("/healthz", health.Liveness)
 	r.HandleFunc("/readyz", health.Readiness)
+	r.Handle("/orders/{id}/pay", pay.Handler()).Methods("POST")
 	r.Handle("/metrics", promhttp.Handler())
 
 	r.Use(handler.LoggerMiddleware(logger))
@@ -83,7 +91,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 
-	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger, cfg.DBMaxConns, cfg.DBMinConns)
+	pool, err := repository.Connect(ctx, cfg.DatabaseURL, logger, repository.PoolConfig{MaxConns: cfg.DBMaxConns, MinConns: cfg.DBMinConns, AcquireTimeout: cfg.DBAcquireTimeout})
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +100,7 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 	}
 	logger.Info("postgres connected!")
 
-	redisCache := cache.New(cfg.RedisAddr)
+	redisCache := cache.New(cfg.RedisAddr, cache.WithBreaker(cfg.RedisBreakerThreshold, cfg.RedisBreakerOpenFor))
 	if err := redisCache.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("redis connection failed: %w", err)
 	}
@@ -100,23 +108,45 @@ func New(ctx context.Context, logger *zap.Logger) (*App, error) {
 
 	orderRepo, productRepo := newRepositories(pool, redisCache, logger)
 	orderSvc, productSvc := newServices(orderRepo, productRepo, pool, logger)
+
+	provider, err := payment.NewFakeProvider(ctx, pool, logger)
+	if err != nil {
+		return nil, err
+	}
+	refunds := worker.NewRefundWorker(pool, provider, logger)
+	reconciler := worker.NewReconcileWorker(pool, provider, repository.NewPaymentRepo(pool, logger), logger,
+		worker.WithReconcileTiming(cfg.PayStuckAfter, cfg.PayExpireAfter, 10*time.Second, 5*time.Minute, 10))
+	payH := handler.NewPaymentHandler(service.NewPaymentService(repository.NewPaymentRepo(pool, logger), provider, logger), repository.NewIdempotencyRepo(pool), logger)
 	h := newHandler(orderSvc, productSvc, logger)
 
 	relay := worker.NewOutboxRelay(pool, []string{"kafka:9092"}, logger)
+	// готовность — не просто «база отвечает», а «схема той версии, что нужна образу»
+	schemaVersion, err := migrations.Latest()
+	if err != nil {
+		return nil, fmt.Errorf("embedded migrations: %w", err)
+	}
+	health := handler.NewHealthHandler(repository.NewSchemaPinger(pool, schemaVersion), redisCache)
 	return &App{
 		server: &http.Server{
 			Addr:              cfg.Port,
-			Handler:           setupRoutes(h, handler.NewHealthHandler(pool, redisCache), logger),
+			Handler:           setupRoutes(h, health, payH, logger),
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       10 * time.Second,
 			WriteTimeout:      15 * time.Second,
 			IdleTimeout:       60 * time.Second,
 		},
-		logger: logger,
-		ctx:    ctx,
-		pool:   pool,
-		cache:  redisCache,
-		relay:  relay,
+		logger:      logger,
+		ctx:         ctx,
+		pool:        pool,
+		cache:       redisCache,
+		relay:       relay,
+		refunds:     refunds,
+		reconciler:  reconciler,
+		recon:       reconciliation.NewJob(pool, provider, repository.NewPaymentRepo(pool, logger), logger),
+		reconEvery:  cfg.ReconcileEvery,
+		reconWindow: cfg.ReconcileWindow,
+		health:      health,
+		drainDelay:  cfg.ShutdownDrainDelay,
 	}, nil
 }
 
@@ -126,6 +156,14 @@ func (a *App) Run() error {
 	relayCtx, relayCancel := context.WithCancel(a.ctx)
 	defer relayCancel()
 	go a.relay.Run(relayCtx)
+	go a.refunds.Run(relayCtx)
+	go a.reconciler.Run(relayCtx)
+	// сверка — одна на весь сервис, а не по разу в каждой реплике (K8S-06)
+	lease := repository.NewJobLease(a.pool)
+	go a.recon.RunScheduledOnce(relayCtx, a.reconEvery, a.reconWindow,
+		func(ctx context.Context, every time.Duration) (bool, error) {
+			return lease.TryClaim(ctx, "reconciliation", every)
+		})
 
 	// метрики пула соединений
 	go func() {
@@ -155,7 +193,15 @@ func (a *App) Run() error {
 	<-quit
 	a.logger.Info("Shutting down...")
 
-	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
+	// Сначала /readyz краснеет, и только потом закрываем порт.
+	// Балансировщик узнаёт об этом на следующей проверке и перестаёт слать
+	// новые запросы, а мы пока обслуживаем всё, что ещё приходит.
+	a.health.SetShuttingDown()
+	a.logger.Info("readiness off, draining before closing listener",
+		zap.Duration("delay", a.drainDelay))
+	time.Sleep(a.drainDelay)
+
+	ctx, cancel := context.WithTimeout(a.ctx, 12*time.Second) // > дедлайна запроса 10s
 	defer cancel()
 
 	if err := a.server.Shutdown(ctx); err != nil {

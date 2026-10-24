@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: orders
+spec:
+  selector: {app: postgres}
+  ports:
+    - port: 5432
+---
+# StatefulSet, а не Deployment: у пода постоянное имя (postgres-0)
+# и свой PVC, который переживает удаление и пересоздание пода.
+# С emptyDir база обнулялась при каждом пересоздании пода.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: orders
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_DB
+              value: orders_db
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: order-service-secrets, key: POSTGRES_PASSWORD}
+            # Подпапка, а не корень тома: в корне может лежать lost+found,
+            # и initdb откажется работать в непустой папке.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "orders_db"]
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
