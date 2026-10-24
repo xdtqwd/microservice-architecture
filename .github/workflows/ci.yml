@@ -60,11 +60,11 @@ jobs:
 
       - name: Build order-service
         working-directory: order-service
-        run: go build -o server ./cmd && go vet ./...
+        run: go build -o bin/server ./cmd && go vet ./...
 
       - name: Build product-service
         working-directory: product-service
-        run: go build -o product-service . && go vet ./...
+        run: go build -o bin/product-service . && go vet ./...
 
       - name: Docker build
         uses: docker/build-push-action@v5
