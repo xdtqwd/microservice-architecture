@@ -39,7 +39,7 @@ jobs:
 
       - name: Race detector
         working-directory: order-service
-        run: go test -race ./...
+        run: go test -short -race ./...
 
       - name: Coverage
         working-directory: order-service
@@ -69,14 +69,35 @@ jobs:
 
       - name: Build order-service
         working-directory: order-service
-        run: go build -o server ./cmd && go vet ./...
+        run: go build -o bin/server ./cmd && go vet ./...
 
       - name: Build product-service
         working-directory: product-service
-        run: go build -o product-service . && go vet ./...
+        run: go build -o bin/product-service . && go vet ./...
 
       - name: Docker build
         uses: docker/build-push-action@v5
         with:
           context: order-service
           push: false
+
+  # Интеграционные тесты на настоящих Postgres и Redis в контейнерах.
+  # Отдельный job: идут дольше и требуют Docker, быстрые проверки их не ждут.
+  integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: order-service/go.mod
+          cache-dependency-path: order-service/go.sum
+
+      - name: Integration tests (testcontainers)
+        working-directory: order-service
+        run: |
+          go test -tags=integration -race -count=1 \
+            -coverpkg=./internal/... -coverprofile=integration.out ./...
+          go tool cover -func=integration.out | tail -1

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -22,6 +23,14 @@ var errToStatus = map[error]int{
 	domain.ErrInvalidCursor:           http.StatusBadRequest,
 	domain.ErrOffsetNotSupported:      http.StatusBadRequest,
 	domain.ErrCatalogUnavailable:      http.StatusServiceUnavailable,
+	domain.ErrPaymentDeclined:         http.StatusPaymentRequired,
+	domain.ErrPaymentAlreadyActive:    http.StatusConflict,
+	domain.ErrPaymentTransition:       http.StatusConflict,
+	domain.ErrPaymentNotFound:         http.StatusNotFound,
+	domain.ErrPaymentInProgress:       http.StatusConflict,
+	// не дождались соединения из пула или общий дедлайн запроса:
+	// сервис перегружен, но жив — клиенту стоит повторить позже
+	context.DeadlineExceeded: http.StatusServiceUnavailable,
 }
 
 func writeError(w http.ResponseWriter, logger *zap.Logger, err error) {
@@ -39,10 +48,13 @@ func writeError(w http.ResponseWriter, logger *zap.Logger, err error) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	if status == http.StatusServiceUnavailable {
+		w.Header().Set("Retry-After", "1")
+	}
 	w.WriteHeader(status)
 
 	msg := http.StatusText(status)
-	if status != http.StatusInternalServerError {
+	if status != http.StatusInternalServerError && status != http.StatusServiceUnavailable {
 		msg = err.Error()
 	}
 	_ = json.NewEncoder(w).Encode(errorResponse{Error: msg})
