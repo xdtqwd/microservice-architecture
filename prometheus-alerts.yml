@@ -1,0 +1,21 @@
+groups:
+  - name: outbox
+    rules:
+      # При нормальной работе лаг — доли секунды (релей ходит каждые 0.5s).
+      # Минута без публикации для события заказа — это уже инцидент:
+      # консьюмеры не узнают о заказах. for: 2m отсекает короткие всплески.
+      - alert: OutboxLagHigh
+        expr: outbox_lag_seconds > 60
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox не публикуется больше минуты"
+          description: "Самому старому неопубликованному событию {{ $value | humanizeDuration }}. Проверь Kafka и логи релея."
+      - alert: OutboxLagCritical
+        expr: outbox_lag_seconds > 600
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox стоит больше 10 минут"

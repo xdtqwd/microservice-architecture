@@ -26,7 +26,11 @@ func (m *TxManager) Do(ctx context.Context, fn func(ctx context.Context) error) 
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
+	defer func() {
+		fctx, cancel := Detached()
+		defer cancel()
+		_ = tx.Rollback(fctx)
+	}()
 
 	if err := fn(context.WithValue(ctx, ctxKey{}, tx)); err != nil {
 		return err
