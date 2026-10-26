@@ -26,6 +26,10 @@ services:
     ports:
       - "8083:8083"
     environment:
+      PRODUCT_CATALOG: ${PRODUCT_CATALOG:-grpc-cached}
+      PRODUCT_GRPC_ADDR: product-service:9090
+      CATALOG_TIMEOUT: ${CATALOG_TIMEOUT:-500ms}
+      CATALOG_MAX_STALE: ${CATALOG_MAX_STALE:-10m}
       DATABASE_URL: postgres://postgres:password@postgres:5432/orders_db
       REDIS_ADDR: redis:6379
       DB_MAX_CONNS: ${DB_MAX_CONNS:-10}
@@ -66,8 +70,15 @@ services:
     build: ./product-service
     ports:
       - "8082:8082"
+      - "9091:9090"
+    environment:
+      DATABASE_URL: postgres://postgres:password@postgres:5432/orders_db
+      GRPC_ADDR: ":9090"
+      CATALOG_SLOW_QUERY: ${CATALOG_SLOW_QUERY:-0s}
+      CATALOG_IGNORE_CTX: ${CATALOG_IGNORE_CTX:-0}
     depends_on:
       - kafka
+      - postgres
 
   prometheus:
     image: prom/prometheus:latest

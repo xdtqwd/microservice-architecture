@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package product.v1;
+
+// go_package не указан намеренно: код генерируется в каждый сервис отдельно,
+// путь задаётся флагом M при вызове protoc (см. корневой Makefile).
+
+// ProductService — каталог товаров. Владелец — product-service.
+service ProductService {
+  // Товар по id. Нет такого — статус NOT_FOUND.
+  rpc GetProduct(GetProductRequest) returns (GetProductResponse);
+  // Несколько товаров за один вызов. Отсутствующие не ошибка —
+  // их id возвращаются в not_found_ids, чтобы не делать N запросов.
+  rpc GetProducts(GetProductsRequest) returns (GetProductsResponse);
+}
+
+// Money — денежная сумма без потери точности, по образцу google.type.Money.
+//
+// Не double: 0.1 в двоичной плавающей точке непредставимо точно, и сумма
+// 0.1 + 0.2 даёт 0.30000000000000004 — по той же причине в домене decimal.
+// Не строка "150000.00": формат никак не проверяется схемой, разбор и
+// валидация ложатся на каждого клиента.
+// Целые units + nanos точны, типизированы и не зависят от числа знаков
+// у валюты (у рубля 2, у иены 0, у бахрейнского динара 3).
+//
+// Значение = units + nanos / 1e9. Знаки units и nanos совпадают,
+// |nanos| < 1 000 000 000. Пример: 150000.50 RUB =
+// {currency_code: "RUB", units: 150000, nanos: 500000000}.
+message Money {
+  string currency_code = 1; // ISO 4217
+  int64 units = 2;
+  int32 nanos = 3;
+}
+
+message Product {
+  int64 id = 1;
+  string name = 2;
+  Money price = 3;
+  int32 stock = 4;
+
+  // Номера полей — часть контракта навсегда: на проводе нет имён, только
+  // номера. Если поле удаляют, его номер и имя заносят в reserved, иначе
+  // кто-то займёт номер новым полем другого типа, и старый клиент прочитает
+  // новые данные как старое поле — молча и неправильно. Например, когда-то
+  // уберём stock (остатки будут в отдельном сервисе), строка станет такой:
+  //   reserved 4; reserved "stock";
+}
+
+message GetProductRequest {
+  int64 id = 1;
+}
+
+message GetProductResponse {
+  Product product = 1;
+}
+
+message GetProductsRequest {
+  repeated int64 ids = 1;
+}
+
+message GetProductsResponse {
+  repeated Product products = 1;
+  repeated int64 not_found_ids = 2;
+}
